@@ -7,7 +7,7 @@ Archivos de publicación: `docs/store/`. Firma: `docs/store/SIGNING.md`. Respues
 ## Build y firma
 
 - [x] `applicationId` `com.honvert.app`. No se puede cambiar después de publicar.
-- [x] `versionCode` 1, `versionName` 0.1.0. Sube `versionCode` en cada envío.
+- [x] `versionCode` 2 (la 1 ya la usó una subida anterior), `versionName` 0.1.0. Sube `versionCode` en cada envío.
 - [x] `targetSdk` 36, `compileSdk` 36, `minSdk` 24 (vía `expo-build-properties`).
 - [x] Release con R8 (minificación) y reducción de recursos (~230 KB menos, verificado).
 - [ ] PNG crunch: el flag existe, pero el build no ejecuta esa tarea. Los PNG pesan 0.10 MB en total, así que el impacto es mínimo.

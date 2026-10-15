@@ -55,6 +55,6 @@ Sube el `.aab` en **Testing > Internal testing** primero. Después de probarlo, 
 
 ## Recordatorios
 
-- Sube `versionCode` en cada envío (está en `app.json`, ahora en 1).
+- Sube `versionCode` en cada envío (está en `app.json`, ahora en 2; Play ya tiene la versión 1).
 - Nunca subas `gradle.properties` ni el `.p12` al repo. El `.gitignore` de la raíz excluye la carpeta `/android` completa, y el `gradle.properties` con las contraseñas vive en tu carpeta de usuario, fuera del proyecto.
 - Las pruebas de firma con una clave de prueba se hicieron con un keystore temporal fuera del repo; no se usaron para publicar.
