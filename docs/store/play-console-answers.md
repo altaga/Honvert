@@ -4,7 +4,7 @@ Cada bloque trae el texto para copiar (en inglés, como lo pide la consola) y un
 
 ## 1. Política de privacidad
 
-**URL:** `[PRIVACY_POLICY_URL]`
+**URL:** `https://altaga.github.io/Honvert/store/privacy-policy.html`
 
 Nota: sale de `docs/store/privacy-policy.html`. Publícala en GitHub Pages y pon la URL aquí.
 

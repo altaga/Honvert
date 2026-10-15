@@ -38,8 +38,8 @@ GOOD TO KNOW
 First release. Image, GIF, audio, video and PDF conversions that run entirely on your phone.
 
 **Category:** Tools
-**Contact email:** [CONTACT_EMAIL]
-**Privacy policy URL:** [PRIVACY_POLICY_URL]
+**Contact email:** altaga@protonmail.com
+**Privacy policy URL:** https://altaga.github.io/Honvert/store/privacy-policy.html
 **Website (optional):** [WEBSITE_URL]
 
 ---
@@ -80,6 +80,6 @@ A TENER EN CUENTA
 Primera versión. Conversiones de imagen, GIF, audio, video y PDF que se hacen completamente en tu teléfono.
 
 **Categoría:** Herramientas
-**Correo de contacto:** [CONTACT_EMAIL]
-**URL de la política de privacidad:** [PRIVACY_POLICY_URL]
+**Correo de contacto:** altaga@protonmail.com
+**URL de la política de privacidad:** https://altaga.github.io/Honvert/store/privacy-policy.html
 **Sitio web (opcional):** [WEBSITE_URL]
