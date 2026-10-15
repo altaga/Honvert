@@ -1,0 +1,18 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.honvertengine'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.honvertengine"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // LGPL-3.0 build of FFmpeg (no GPL codecs). Includes MediaCodec hardware encoders.
+  implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9'
+}
