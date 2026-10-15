@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useEffect } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, PixelRatio, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Easing,
   FadeInDown,
@@ -174,6 +174,8 @@ export function DisclosureRow({ label, count, open, onToggle }) {
   );
 }
 
+const THUMB_SIZE = 44;
+
 function Thumbnail({ file }) {
   if (!file?.mime?.startsWith("image/")) {
     return (
@@ -182,7 +184,9 @@ function Thumbnail({ file }) {
       </View>
     );
   }
-  return <Image source={{ uri: fileUri(file.path) }} style={styles.thumb} accessibilityIgnoresInvertColors />;
+  // Decode at the size it is drawn, not at full resolution: a full-size camera photo can take tens of MB of memory.
+  const pixels = Math.round(PixelRatio.getPixelSizeForLayoutSize(THUMB_SIZE));
+  return <Image source={{ uri: fileUri(file.path), width: pixels, height: pixels }} style={styles.thumb} accessibilityIgnoresInvertColors />;
 }
 
 // Empty state is a dashed drop zone; filled state is a compact file card with a real preview when possible.
@@ -398,8 +402,8 @@ const styles = StyleSheet.create({
     borderRadius: radius,
   },
   thumb: {
-    width: 44,
-    height: 44,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
     borderRadius: radius,
     borderWidth: 1,
     borderColor: colors.lineStrong,
