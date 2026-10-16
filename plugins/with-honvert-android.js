@@ -2,7 +2,7 @@
 // generated android/ folder (gitignored) always gets the same result.
 const fs = require("fs");
 const path = require("path");
-const { withAppBuildGradle, withDangerousMod, withGradleProperties } = require("expo/config-plugins");
+const { withAppBuildGradle, withDangerousMod, withGradleProperties, withProjectBuildGradle } = require("expo/config-plugins");
 
 // Debug builds need the network for Metro and the dev client. The release manifest does not
 // request INTERNET (see "blockedPermissions" in app.json), so this file only exists for debug.
@@ -74,4 +74,50 @@ function withGradleMemory(config) {
   });
 }
 
-module.exports = (config) => withGradleMemory(withReleaseSigning(withDebugInternet(config)));
+// Play's analysis asks for AGP 9+, which enables optimized resource shrinking. Expo's template
+// leaves the plugin unversioned, so pin it here and point the wrapper at the Gradle version AGP 9 needs.
+const AGP_VERSION = "9.0.1";
+const GRADLE_VERSION = "9.4.1";
+
+function withAgpVersion(config) {
+  return withProjectBuildGradle(config, (cfg) => {
+    const from = "classpath('com.android.tools.build:gradle')";
+    if (cfg.modResults.contents.includes(from)) {
+      cfg.modResults.contents = cfg.modResults.contents.replace(from, `classpath('com.android.tools.build:gradle:${AGP_VERSION}')`);
+    }
+    return cfg;
+  });
+}
+
+function withGradleWrapperVersion(config) {
+  return withDangerousMod(config, [
+    "android",
+    (cfg) => {
+      const file = path.join(cfg.modRequest.platformProjectRoot, "gradle", "wrapper", "gradle-wrapper.properties");
+      const text = fs.readFileSync(file, "utf8");
+      fs.writeFileSync(file, text.replace(/gradle-[\d.]+-bin\.zip/, `gradle-${GRADLE_VERSION}-bin.zip`));
+      return cfg;
+    },
+  ]);
+}
+
+// Windows limits paths to 260 characters. The CMake build folder (and the codegen folders inside it)
+// must sit near the drive root, and CMake 4.x ships a Ninja that handles long paths. Windows only.
+function withShortNativeBuild(config) {
+  return withAppBuildGradle(config, (cfg) => {
+    if (process.platform !== "win32" || cfg.modResults.contents.includes("buildStagingDirectory")) return cfg;
+    cfg.modResults.contents += `
+android {
+    externalNativeBuild {
+        cmake {
+            buildStagingDirectory = file("C:/rc")
+            version = "4.1.2"
+        }
+    }
+}
+`;
+    return cfg;
+  });
+}
+
+module.exports = (config) => withShortNativeBuild(withGradleWrapperVersion(withAgpVersion(withGradleMemory(withReleaseSigning(withDebugInternet(config))))));

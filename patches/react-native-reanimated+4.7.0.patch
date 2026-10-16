@@ -1,0 +1,12 @@
+diff --git a/node_modules/react-native-reanimated/android/build.gradle.kts b/node_modules/react-native-reanimated/android/build.gradle.kts
+index 0000000..0000000 100644
+--- a/node_modules/react-native-reanimated/android/build.gradle.kts
++++ b/node_modules/react-native-reanimated/android/build.gradle.kts
+@@ -225,6 +225,7 @@ android {
+     externalNativeBuild {
+         cmake {
+             path = file("CMakeLists.txt")
++            buildStagingDirectory = file("C:/rc")
+         }
+     }
+ 
