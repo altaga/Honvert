@@ -55,8 +55,15 @@ jobs:
       # The components the local release build uses. Licenses are accepted inline.
       - name: Install Android SDK components
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "cmake;4.1.2" "ndk;27.1.12297006"
+          # The runner does not put sdkmanager on PATH, so find it inside the preinstalled SDK.
+          ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$ANDROID_HOME" -maxdepth 4 -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under $ANDROID_HOME"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "cmake;4.1.2" "ndk;27.1.12297006"
 
       - name: Install dependencies
         run: npm ci
