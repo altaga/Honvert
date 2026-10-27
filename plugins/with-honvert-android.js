@@ -102,15 +102,16 @@ function withGradleWrapperVersion(config) {
 }
 
 // Windows limits paths to 260 characters. The CMake build folder (and the codegen folders inside it)
-// must sit near the drive root, and CMake 4.x ships a Ninja that handles long paths. Windows only.
+// must sit near the drive root, so Windows gets a short staging folder. Every platform pins CMake 4.1.2,
+// the version the release was tested with, so CI on Linux builds with the same toolchain.
 function withShortNativeBuild(config) {
   return withAppBuildGradle(config, (cfg) => {
-    if (process.platform !== "win32" || cfg.modResults.contents.includes("buildStagingDirectory")) return cfg;
+    if (cfg.modResults.contents.includes('version = "4.1.2"')) return cfg;
+    const staging = process.platform === "win32" ? '\n            buildStagingDirectory = file("C:/rc")' : "";
     cfg.modResults.contents += `
 android {
     externalNativeBuild {
-        cmake {
-            buildStagingDirectory = file("C:/rc")
+        cmake {${staging}
             version = "4.1.2"
         }
     }
