@@ -35,7 +35,7 @@ GOOD TO KNOW
 - Conversions use FFmpeg, an open-source library. The full license notices are in Settings.
 
 **Release notes (500):**
-First release. Image, GIF, audio, video and PDF conversions that run entirely on your phone.
+New in 0.2.0: a Repair tab that recovers what can still be read from damaged JPG, PNG, GIF, PDF, ZIP and Office files, and from MP4, MOV, MKV, AVI and WEBM videos. Save any result into a folder you choose with the Download icon. Thumbnails load faster. Fixes for button labels and file names.
 
 **Category:** Tools
 **Contact email:** altaga@protonmail.com
@@ -77,7 +77,7 @@ A TENER EN CUENTA
 - Las conversiones usan FFmpeg, una biblioteca de código abierto. Los avisos completos de licencia están en Ajustes.
 
 **Notas de la versión (500):**
-Primera versión. Conversiones de imagen, GIF, audio, video y PDF que se hacen completamente en tu teléfono.
+Novedades de la 0.2.0: una pestaña Reparar que recupera lo que aún se puede leer de archivos JPG, PNG, GIF, PDF, ZIP y Office dañados, y de videos MP4, MOV, MKV, AVI y WEBM. Guarda cualquier resultado en la carpeta que elijas con el icono de descarga. Las miniaturas cargan más rápido. Correcciones en textos y botones.
 
 **Categoría:** Herramientas
 **Correo de contacto:** altaga@protonmail.com

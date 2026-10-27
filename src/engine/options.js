@@ -39,7 +39,7 @@ export const CATEGORIES = {
     formatsKey: "cat.image.formats",
     acceptKey: "accept.image",
     picker: { types: ["image/*"], multiple: false },
-    defaults: { format: "jpg", quality: 85, scalePercent: 100, ratio: "original" },
+    defaults: { format: "jpg", quality: 90, scalePercent: 100, ratio: "original" },
     advanced: ["ratio"],
     controls: [
       {

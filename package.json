@@ -7,6 +7,13 @@
     "start": "expo start",
     "android": "expo run:android",
     "lint": "eslint .",
+    "test": "jest",
+    "test:all": "npm test && npm run test:native",
+    "test:unit": "jest tests/unit",
+    "test:fuzz": "jest tests/fuzz",
+    "test:native": "node tests/run-native.js",
+    "test:deep": "node tests/run-deep.js",
+    "test:e2e": "node tests/e2e/run.js",
     "postinstall": "patch-package"
   },
   "dependencies": {
@@ -38,8 +45,10 @@
     "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
+    "babel-jest": "^30.5.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
+    "jest": "^30.5.2",
     "patch-package": "^8.0.1",
     "typescript": "~5.9"
   },

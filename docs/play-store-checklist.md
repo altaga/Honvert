@@ -1,18 +1,19 @@
 # Honvert: checklist para Google Play
 
-Estado al 2026-10-15. **[x]** = hecho y comprobado en este repo o en el emulador. **[ ]** = pendiente. Lo que dice "tuyo" necesita tu cuenta, tus claves o tu decisión; no lo puedo hacer desde aquí.
+Estado al 2026-10-27. **[x]** = hecho y comprobado en este repo o en el emulador. **[ ]** = pendiente. Lo que dice "tuyo" necesita tu cuenta, tus claves o tu decisión; no lo puedo hacer desde aquí.
 
 Archivos de publicación: `docs/store/`. Firma: `docs/store/SIGNING.md`. Respuestas para la consola: `docs/store/play-console-answers.md`. Textos de la ficha: `docs/store/listing.md`.
 
 ## Build y firma
 
 - [x] `applicationId` `com.honvert.app`. No se puede cambiar después de publicar.
-- [x] `versionCode` 2 (la 1 ya la usó una subida anterior), `versionName` 0.1.0. Sube `versionCode` en cada envío.
+- [x] `versionCode` 4, `versionName` 0.2.0. La 1 ya la usó una subida anterior; la 4 es mayor que todas. Sube `versionCode` en cada envío.
 - [x] `targetSdk` 36, `compileSdk` 36, `minSdk` 24 (vía `expo-build-properties`).
 - [x] Release con R8 (minificación) y reducción de recursos (~230 KB menos, verificado).
 - [ ] PNG crunch: el flag existe, pero el build no ejecuta esa tarea. Los PNG pesan 0.10 MB en total, así que el impacto es mínimo.
-- [x] Firma con clave de subida probada con un keystore temporal fuera del repo: el certificado es el correcto y el AAB se genera (95 MB).
-- [ ] **Tuyo:** crear tu clave de subida y agregar las cuatro propiedades al `gradle.properties` de tu carpeta de usuario. Guía en `docs/store/SIGNING.md`.
+- [x] AAB firmado con la clave de subida (CN=Victor Altamirano, O=Honvert). `jarsigner -verify` da `jar verified`. Pesa 95.6 MB con todas las arquitecturas.
+- [x] Clave de subida creada y las cuatro propiedades están en `~/.gradle/gradle.properties`.
+- [ ] **Tuyo:** confirmar en Play Console que la huella SHA-256 de la clave de subida es `F1:99:40:EE:8D:B5:D7:4F:EB:F8:73:20:CF:30:AE:DE:B8:57:DB:FC:5E:DD:59:5B:32:94:15:4C:B0:06:2E:B1`. Si no coincide, la subida se rechaza.
 - [ ] **Tuyo:** inscribir la app en Play App Signing.
 - [x] Se sube el `.aab`, no el `.apk`. Play genera un APK por dispositivo.
 
@@ -21,12 +22,12 @@ Archivos de publicación: `docs/store/`. Firma: `docs/store/SIGNING.md`. Respues
 - [x] Páginas de 16 KB: `zipalign -c -P 16` pasa, y las bibliotecas nativas tienen alineación de segmento 0x4000.
 - [x] `useLegacyPackaging=false`.
 - [ ] Prueba en un teléfono físico con página de 16 KB. Solo verificado en emulador.
-- [ ] Revisa el tamaño de descarga por dispositivo con `bundletool get-size total` sobre el `.aab`. Lo grande es FFmpeg: unos 46 MB de bibliotecas nativas en arm64.
+- [ ] Tamaño de descarga por dispositivo con `bundletool get-size total` sobre el `.aab` (no lo he corrido). Las bibliotecas nativas de arm64 pesan 49 MB sin comprimir; lo grande es FFmpeg.
 
 ## Permisos y privacidad
 
 - [x] Release sin `INTERNET`, sin almacenamiento, sin `SYSTEM_ALERT_WINDOW`, no `debuggable`. `allowBackup` desactivado.
-- [ ] El release trae `ACCESS_NETWORK_STATE` y `VIBRATE`, que vienen de dependencias. No son sensibles. Decide si los bloqueas con `blockedPermissions`.
+- [x] El release 0.2.0 declara solo `VIBRATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` y `POST_NOTIFICATIONS` (verificado con `aapt2 dump badging`). Ninguno es sensible.
 - [x] `POST_NOTIFICATIONS` se pide en tiempo de ejecución en Android 13+.
 - [x] Android 15+: `onTimeout` detiene la conversión antes del límite de 6 h de `dataSync`.
 - [x] Justificación del servicio en primer plano redactada (`play-console-answers.md`, §8).
@@ -64,7 +65,7 @@ Archivos de publicación: `docs/store/`. Firma: `docs/store/SIGNING.md`. Respues
 
 - [x] ESLint sin errores (corrida final).
 - [x] E2E del motor en el emulador, sobre el build debug con el JS embebido: 31 conversiones y la cancelación, 32/32. Las salidas se decodificaron sin errores en el host.
-- [ ] El harness no corrió sobre el APK de release, porque se borró antes de la publicación. El código del motor es el mismo.
+- [x] E2E de reparación y guardado sobre el APK de release 0.2.0 (`npm run test:e2e`): PASS. Guarda la copia en Documents y comprueba la cabecera `%PDF-`.
 - [x] Release instalado, arranca sin Metro, sin errores fatales. Renderizan la pantalla de inicio, Images, Ajustes y Licencias.
 - [ ] UI en release: háptica, gesto atrás con `targetSdk` 36, RU/AR/HI/JA sin cortes.
 - [ ] Cancelar desde la notificación en el build de release (verificado en debug).

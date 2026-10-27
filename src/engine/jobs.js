@@ -24,6 +24,8 @@ import {
   probeFile,
 } from "./media";
 import { compressPdf, mergePdfs, pdfFromJpegs, pdfToImages, splitPdf, writeBytes } from "./pdf";
+import { EngineError, JobCancelled, keyForFfmpeg, keyForPdf } from "./errors";
+import { reencodeTarget, repairExtension, stemOf } from "./names";
 
 export const toPath = (uri) => decodeURIComponent(uri.replace(/^file:\/\//, ""));
 const toUri = (path) => `file://${path}`;
@@ -50,52 +52,12 @@ export const MIME = {
   pdf: "application/pdf",
 };
 
-// Errors carry a translation key. The UI shows the translated text; `detail` stays technical.
-export class EngineError extends Error {
-  constructor(key, detail = "") {
-    super(key);
-    this.name = "EngineError";
-    this.key = key;
-    this.detail = detail;
-  }
-}
-
-export class JobCancelled extends Error {
-  constructor() {
-    super("cancelled");
-    this.name = "JobCancelled";
-  }
-}
-
-// Turns raw FFmpeg output into a friendly key.
-function keyForFfmpeg(output = "") {
-  if (/Unknown encoder|Unknown decoder|Encoder .* not found|No such filter|not found/i.test(output)) {
-    return "error.unsupported";
-  }
-  if (/Invalid data|Invalid argument|does not contain any stream|moov atom not found|could not find codec/i.test(output)) {
-    return "error.corrupt";
-  }
-  return "error.generic";
-}
-
-export function keyForPdf(error) {
-  const text = String(error?.message ?? error ?? "");
-  if (/password|encrypt/i.test(text)) return "error.pdfEncrypted";
-  return "error.pdfInvalid";
-}
-
 async function ensureDirs() {
   for (const dir of [OUTPUT_DIR, WORK_DIR]) {
     await FileSystem.makeDirectoryAsync(toUri(dir), { intermediates: true });
   }
 }
 
-// Keeps the name readable (any script) and safe for the file system.
-const stemOf = (name) =>
-  name
-    .replace(/\.[^.]+$/, "")
-    .replace(/[\\/:*?"<>|\s]+/g, "_")
-    .slice(0, 48) || "file";
 const stamp = () => Date.now().toString(36);
 let counter = 0;
 const unique = () => `${stamp()}${(counter++).toString(36)}`;
@@ -379,16 +341,6 @@ const REPAIR_MIME = {
 };
 const REPAIR_VIDEO = ["mp4", "mov", "mkv", "webm", "avi"];
 const REPAIR_AUDIO = ["m4a", "mp3", "wav", "ogg", "flac"];
-const REPAIR_OFFICE = ["docx", "xlsx", "pptx", "odt", "ods", "odp", "epub"];
-
-// Output extension for a detected type. ZIP-based documents keep their own extension when they have one.
-function repairExtension(type, name) {
-  const original = (name.split(".").pop() || "").toLowerCase();
-  if (type === "zip") return REPAIR_OFFICE.includes(original) ? original : "zip";
-  if (type === "jpeg") return "jpg";
-  if (type === "unknown") return null;
-  return type;
-}
 
 // Native failures carry a technical reason; the user only sees a translated key.
 async function nativeStep(step) {
@@ -406,13 +358,6 @@ async function requireReadable(path, kind) {
   if (readable) return;
   await FileSystem.deleteAsync(toUri(path), { idempotent: true }).catch(() => {});
   throw new EngineError("error.corrupt", "nothing readable");
-}
-
-// Video that cannot be remuxed is re-encoded: slow, but tolerant of broken packets.
-// The output keeps its container when H.264 and AAC fit it, and becomes MP4 otherwise.
-function reencodeTarget(output) {
-  const ext = output.split(".").pop();
-  return ["mp4", "mov", "mkv"].includes(ext) ? output : output.replace(/\.[^.]+$/, ".mp4");
 }
 
 async function repairMedia(type, source, output, scratch, progress, reference) {

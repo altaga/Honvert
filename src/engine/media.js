@@ -62,14 +62,16 @@ export function cropFilter(ratioKey, width, height) {
   }
   cropWidth -= cropWidth % 2;
   cropHeight -= cropHeight % 2;
+  // Too small to crop without leaving an empty side: keep the picture as it is.
+  if (cropWidth < 2 || cropHeight < 2) return null;
 
   const x = Math.floor((width - cropWidth) / 2);
   const y = Math.floor((height - cropHeight) / 2);
   return `crop=${cropWidth}:${cropHeight}:${x}:${y}`;
 }
 
-// Quality 1-100 mapped to MJPEG qscale (2 is best, 31 is worst).
-const jpegQscale = (quality) => Math.round(2 + ((100 - quality) * 29) / 99);
+// Quality 1-100 mapped to MJPEG qscale (2 is best, 31 is worst). Values outside the range are clamped.
+const jpegQscale = (quality) => Math.round(2 + ((100 - Math.min(100, Math.max(1, quality))) * 29) / 99);
 
 const IMAGE_CODECS = {
   jpg: (quality) => ["-c:v", "mjpeg", "-q:v", String(jpegQscale(quality))],

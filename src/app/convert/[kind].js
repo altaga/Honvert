@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Button,
@@ -23,10 +23,13 @@ import {
   formatBytes,
 } from "../../components/ui";
 import { prefs } from "../../core/prefs";
-import { colors, space, type } from "../../core/theme";
-import { EngineError, JobCancelled, cancelControl, fileUri, newControl, runConversion, toPath } from "../../engine/jobs";
+import { colors, radius, space, type } from "../../core/theme";
+import { cancelControl, fileUri, newControl, runConversion, toPath } from "../../engine/jobs";
+import { EngineError, JobCancelled } from "../../engine/errors";
+import { fileNameFor, withoutExtension } from "../../engine/names";
 import { requestNotificationPermission } from "../../engine/background";
 import { setEngineLabels } from "../../engine/labels";
+import { saveToFolder } from "../../../modules/honvert-engine";
 import { probeFile } from "../../engine/media";
 import { CATEGORIES, PDF_MODES } from "../../engine/options";
 import { useT } from "../../i18n";
@@ -67,6 +70,7 @@ function Converter({ kind, category }) {
   const [control, setControl] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [reference, setReference] = useState(null);
+  const [saving, setSaving] = useState(null);
 
   const pdfMode = kind === "pdf" ? PDF_MODES[options.mode] : null;
   const picker = pdfMode ? { types: pdfMode.picker, multiple: pdfMode.multiple } : category.picker;
@@ -112,6 +116,7 @@ function Converter({ kind, category }) {
     setResult(null);
     setMessage("");
     setStatus("idle");
+    setSaving(null);
   }
 
   function buzz(type) {
@@ -210,6 +215,22 @@ function Converter({ kind, category }) {
     await Sharing.shareAsync(fileUri(output.path), { mimeType: output.mime, dialogTitle: t("action.share") });
   }
 
+  // Saves a copy of one result into a folder the user picks, under the name the user typed.
+  async function saveOutput(output) {
+    const picked = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (!picked.granted) return;
+    try {
+      await saveToFolder(output.path, picked.directoryUri, fileNameFor(saving?.name, output.name), output.mime);
+      setSaving(null);
+      setMessage(t("save.done"));
+      buzz(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setMessage(t("save.failed"));
+      setStatus("error");
+      buzz(Haptics.NotificationFeedbackType.Error);
+    }
+  }
+
   const renderControl = (control) => (
     <OptionGroup
       key={control.key}
@@ -230,7 +251,7 @@ function Converter({ kind, category }) {
           <Mono>Honvert</Mono>
           <View style={styles.headerSpacer} />
         </View>
-        <Text style={type.title}>{t(category.titleKey)}</Text>
+        <Text style={type.title} accessibilityRole="header">{t(category.titleKey)}</Text>
       </View>
 
       <ScrollView
@@ -309,15 +330,32 @@ function Converter({ kind, category }) {
             {result.note ? <Notice>{t(result.note)}</Notice> : null}
             <View>
               {result.outputs.map((output) => (
-                <OutputRow
-                  key={output.path}
-                  name={output.name}
-                  mime={output.mime}
-                  path={output.path}
-                  size={output.size}
-                  label={`${t("action.share")}: ${output.name}`}
-                  onPress={() => share(output)}
-                />
+                <View key={output.path}>
+                  <OutputRow
+                    name={output.name}
+                    mime={output.mime}
+                    path={output.path}
+                    size={output.size}
+                    label={`${t("action.share")}: ${output.name}`}
+                    onPress={() => share(output)}
+                    onDownload={() => setSaving({ path: output.path, name: withoutExtension(output.name) })}
+                  />
+                  {saving?.path === output.path ? (
+                    <View style={styles.saveEditor}>
+                      <Mono>{t("save.nameLabel")}</Mono>
+                      <TextInput
+                        value={saving.name}
+                        onChangeText={(name) => setSaving({ path: output.path, name })}
+                        style={styles.nameInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        accessibilityLabel={t("save.nameLabel")}
+                      />
+                      <Button label={t("save.choose")} icon="folder-open-outline" onPress={() => saveOutput(output)} />
+                      <Button variant="ghost" label={t("action.cancel")} onPress={() => setSaving(null)} />
+                    </View>
+                  ) : null}
+                </View>
               ))}
               <Hairline />
             </View>
@@ -388,5 +426,15 @@ const styles = StyleSheet.create({
   bottomRow: { flexDirection: "row", gap: space.md },
   primaryAction: { flex: 1 },
   secondaryAction: { flex: 0.45 },
+  saveEditor: { gap: space.md, paddingTop: space.md },
+  nameInput: {
+    ...type.body,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.lineStrong,
+    borderRadius: radius,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+  },
   progressHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
 });

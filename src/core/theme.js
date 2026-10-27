@@ -6,7 +6,7 @@ export const colors = {
   surface: "#141414",
   surfaceHigh: "#1C1C1C",
   line: "#242424",
-  lineStrong: "#3A3A3A",
+  lineStrong: "#606060",
   text: "#F5F5F5",
   muted: "#A8A8A8",
   accent: "#3B82F6",

@@ -103,7 +103,7 @@ export function SectionHeader({ index, title, trailing }) {
   return (
     <View style={styles.sectionHeader}>
       {index ? <Mono color={colors.accent}>{index}</Mono> : null}
-      <Mono color={colors.text} style={styles.flex}>
+      <Mono color={colors.text} style={styles.flex} accessibilityRole="header">
         {title}
       </Mono>
       {trailing}
@@ -215,7 +215,8 @@ export function FileDrop({ files, hint, meta, multiple, disabled, onPress }) {
   }
 
   const first = files[0];
-  const title = multiple ? t("file.count", { count: files.length }) : first.name;
+  const countLabel = files.length === 1 ? t("file.count.one") : t("file.count", { count: files.length });
+  const title = multiple ? countLabel : first.name;
   const subtitle = multiple
     ? files
         .slice(0, 2)
@@ -297,7 +298,9 @@ export function CategoryRow({ icon, title, subtitle, formats, onPress }) {
   );
 }
 
-export function OutputRow({ name, mime, path, size, onPress, label }) {
+// A finished file: tapping the row shares it. The download icon saves a copy into a folder the user picks.
+export function OutputRow({ name, mime, path, size, onPress, onDownload, label }) {
+  const { t } = useT();
   const ext = name.split(".").pop()?.toUpperCase();
   return (
     <Tappable label={label} onPress={onPress} innerStyle={styles.outputRow} pressedStyle={{ backgroundColor: colors.surface }}>
@@ -308,13 +311,21 @@ export function OutputRow({ name, mime, path, size, onPress, label }) {
         </Text>
         <Mono>{`${ext} · ${formatBytes(size)}`}</Mono>
       </View>
-      <Ionicons name="share-outline" size={22} color={colors.accent} />
+      {onDownload ? (
+        <Tappable label={`${t("action.download")}: ${name}`} onPress={onDownload} innerStyle={styles.rowAction}>
+          <Ionicons name="download-outline" size={22} color={colors.accent} />
+        </Tappable>
+      ) : null}
+      <View style={styles.rowAction}>
+        <Ionicons name="share-outline" size={22} color={colors.accent} />
+      </View>
     </Tappable>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  rowAction: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   noCase: { letterSpacing: 0, textTransform: "none", fontSize: 16 },
   hairline: { height: StyleSheet.hairlineWidth },
   sectionHeader: {

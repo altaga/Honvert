@@ -32,7 +32,9 @@ export default function Home() {
           <Mono>{t("app.version")}</Mono>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
-          <Mono color={colors.accent}>● {t("home.offline")}</Mono>
+          <View style={{ borderWidth: 1, borderColor: colors.accent, paddingHorizontal: space.sm, paddingVertical: space.xxs }}>
+            <Mono color={colors.accent}>● {t("home.offline")}</Mono>
+          </View>
           <Tappable label={t("home.settings")} onPress={() => router.push("/settings")} innerStyle={{ padding: space.xs }} pressedStyle={{ opacity: 0.6 }}>
             <Ionicons name="settings-outline" size={22} color={colors.text} />
           </Tappable>
@@ -40,11 +42,12 @@ export default function Home() {
       </Reveal>
 
       <ScrollView contentContainerStyle={{ paddingBottom: space.xxl }}>
-        <Reveal index={1} style={{ paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.xs }}>
-          <Text style={type.heading}>
-            {t("home.headline")} <Text style={{ color: colors.accent }}>{t("home.headlineAccent")}</Text>
+        <Reveal index={1} style={{ paddingHorizontal: space.xl, paddingTop: space.xl, gap: space.sm }}>
+          <Text style={{ ...type.display, fontSize: 52, lineHeight: 50, letterSpacing: -1.5 }} accessibilityRole="header">
+            {t("home.headline")}
           </Text>
-          <Text style={type.small}>{t("home.lede")}</Text>
+          <Text style={{ ...type.heading, color: colors.accent, fontSize: 26, lineHeight: 30 }}>{t("home.headlineAccent")}</Text>
+          <Text style={[type.small, { marginTop: space.xs }]}>{t("home.lede")}</Text>
         </Reveal>
 
         <View style={{ marginTop: space.xl }}>

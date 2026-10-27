@@ -8,7 +8,9 @@ import android.graphics.pdf.PdfRenderer
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.os.Build
+import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFprobeKit
 import com.arthenica.ffmpegkit.ReturnCode
@@ -165,6 +167,26 @@ class HonvertEngineModule : Module() {
         }
       }
       outPath
+    }
+
+    // Saves a finished file into a folder the user picked with the system folder picker (SAF). The bytes are
+    // streamed, so large videos never sit in memory. Returns the URI of the new document.
+    AsyncFunction("saveToFolder") { inPath: String, treeUri: String, fileName: String, mimeType: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("app context not ready")
+      val resolver = context.contentResolver
+      val tree = Uri.parse(treeUri)
+      val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+      val created = DocumentsContract.createDocument(resolver, parent, mimeType, fileName)
+        ?: throw IllegalStateException("could not create the file")
+      try {
+        val out = resolver.openOutputStream(created) ?: throw IllegalStateException("could not open the file")
+        out.use { stream -> File(inPath).inputStream().use { input -> input.copyTo(stream, 1 shl 16) } }
+      } catch (error: Exception) {
+        // Do not leave a half-written file in the user's folder.
+        DocumentsContract.deleteDocument(resolver, created)
+        throw error
+      }
+      created.toString()
     }
 
     // Repair: each function writes whatever it can still recover from a damaged file. See RepairTools.

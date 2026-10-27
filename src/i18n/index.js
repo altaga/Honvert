@@ -33,7 +33,7 @@ const RTL_CODES = new Set(LANGUAGES.filter((language) => language.rtl).map((lang
 // Scripts without uppercase or letter-spacing need plain monospace labels.
 export const NO_CASE_CODES = new Set(["ar", "hi", "zh", "ja"]);
 
-function interpolate(text, params) {
+export function interpolate(text, params) {
   if (!params) return text;
   return text.replace(/\{(\w+)\}/g, (_, name) => (params[name] ?? `{${name}}`));
 }

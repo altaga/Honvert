@@ -36,7 +36,7 @@ export default function Settings() {
           </Pressable>
           <Image source={logo} style={{ width: 26, height: 26, borderRadius: 4 }} accessibilityIgnoresInvertColors />
         </View>
-        <Text style={type.title}>{t("settings.title")}</Text>
+        <Text style={type.title} accessibilityRole="header">{t("settings.title")}</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: space.xl, gap: space.xxl, paddingBottom: space.xxl }}>

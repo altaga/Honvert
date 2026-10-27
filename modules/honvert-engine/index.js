@@ -14,6 +14,9 @@ export const renderPdfPage = (pdfPath, pageIndex, dpi, format, quality, outPath)
   Native.renderPdfPage(pdfPath, pageIndex, dpi, format, quality, outPath);
 export const getEncoders = (mime) => Native.getEncoders(mime);
 
+// Copies a finished file into a folder picked with the system folder picker. Returns the new document URI.
+export const saveToFolder = (inPath, treeUri, fileName, mimeType) => Native.saveToFolder(inPath, treeUri, fileName, mimeType);
+
 // Repair (see RepairTools.kt). Each call writes a best-effort output file and returns its path.
 export const repairSniff = (path) => Native.repairSniff(path);
 export const repairStrip = (inPath, outPath, offset) => Native.repairStrip(inPath, outPath, offset);
