@@ -1,6 +1,15 @@
 import en from "../../src/i18n/locales/en";
 import { RATIOS } from "../../src/engine/media";
-import { CATEGORIES, PDF_MODES, PDF_QUALITY, RATIO_CHOICES } from "../../src/engine/options";
+import {
+  CATEGORIES,
+  PDF_MODES,
+  PDF_QUALITY,
+  RATIO_CHOICES,
+  formatTime,
+  parsePageOrder,
+  parsePageRanges,
+  parseTime,
+} from "../../src/engine/options";
 
 jest.mock("../../modules/honvert-engine", () => ({ probe: jest.fn(), getEncoders: jest.fn() }));
 
@@ -29,17 +38,25 @@ describe.each(NAMES)("%s controls", (name) => {
   it("have translated labels and translated or fixed choice labels", () => {
     for (const control of config.controls) {
       expect(hasKey(control.labelKey)).toBe(true);
-      for (const choice of control.choices) {
+      if (control.hintKey) expect(hasKey(control.hintKey)).toBe(true);
+      for (const choice of control.choices ?? []) {
         if (choice.labelKey) expect(hasKey(choice.labelKey)).toBe(true);
         else expect(typeof choice.label).toBe("string");
       }
     }
   });
 
-  it("have a default that is one of their choices", () => {
+  it("have a valid default for every control", () => {
     for (const control of config.controls) {
-      expect(control.key in config.defaults).toBe(true);
-      expect(control.choices.map((choice) => choice.value)).toContain(config.defaults[control.key]);
+      if (control.type === "time") {
+        expect(config.defaults.startMs).toBe(0);
+        expect(config.defaults.endMs).toBe(0);
+      } else if (control.type === "text") {
+        expect(config.defaults[control.key]).toBe("");
+      } else {
+        expect(control.key in config.defaults).toBe(true);
+        expect(control.choices.map((choice) => choice.value)).toContain(config.defaults[control.key]);
+      }
     }
   });
 
@@ -66,6 +83,42 @@ describe("shared choices", () => {
   });
 });
 
+describe("parsePageRanges", () => {
+  it.each([
+    ["1-3, 5", 10, [1, 2, 3, 5]],
+    ["5, 1-3", 10, [1, 2, 3, 5]],
+    ["8-", 10, [8, 9, 10]],
+    ["-2", 10, [1, 2]],
+    ["3-1", 10, []],
+    ["2, 2, 2", 10, [2]],
+    ["0, 11, 4", 10, [4]],
+    ["abc, 1", 10, [1]],
+    ["", 10, []],
+  ])("%j in a %d-page PDF -> %j", (text, count, expected) => {
+    expect(parsePageRanges(text, count)).toEqual(expected);
+  });
+});
+
+describe("parseTime and formatTime", () => {
+  it.each([
+    ["", 0],
+    ["65", 65000],
+    ["1:05", 65000],
+    ["1:02:03", 3723000],
+    ["0:01.5", 1500],
+    ["abc", 0],
+    ["1:2:3:4", 0],
+  ])("%j -> %d ms", (text, ms) => {
+    expect(parseTime(text)).toBe(ms);
+  });
+
+  it("formats whole seconds back to text that parses to the same value", () => {
+    for (const ms of [0, 5000, 65000, 3723000]) expect(parseTime(formatTime(ms))).toBe(ms);
+    expect(formatTime(65000)).toBe("1:05");
+    expect(formatTime(3723000)).toBe("1:02:03");
+  });
+});
+
 describe("PDF", () => {
   it.each(Object.entries(PDF_MODES))("%s has translated labels and a valid picker", (mode, config) => {
     expect(hasKey(config.labelKey)).toBe(true);
@@ -77,5 +130,19 @@ describe("PDF", () => {
   it("has a quality preset for every quality choice", () => {
     const qualityChoices = CATEGORIES.pdf.controls.find((control) => control.key === "quality").choices.map((choice) => choice.value);
     expect(Object.keys(PDF_QUALITY).sort()).toEqual([...qualityChoices].sort());
+  });
+});
+
+describe("parsePageOrder", () => {
+  it.each([
+    ["3, 1, 2", 5, [3, 1, 2]],
+    ["5-3", 5, []],
+    ["4-5, 1", 5, [4, 5, 1]],
+    ["2, 2, 1-3", 5, [2, 1, 3]],
+    ["9, 1", 5, [1]],
+    ["", 5, []],
+    ["abc", 5, []],
+  ])("%s of %d pages is %j", (text, count, expected) => {
+    expect(parsePageOrder(text, count)).toEqual(expected);
   });
 });

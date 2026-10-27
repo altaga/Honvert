@@ -27,5 +27,12 @@ export const repairZip = (inPath, outPath) => Native.repairZip(inPath, outPath);
 export const repairPdf = (inPath, outPath) => Native.repairPdf(inPath, outPath);
 export const extractH264 = (inPath, outPath, referencePath) => Native.extractH264(inPath, outPath, referencePath ?? null);
 
-export const onStart = (listener) => Native.addListener("onStart", listener);
+// First video frame as an upright JPEG no larger than maxSide, for the crop box preview.
+export const videoFrame = (inPath, outPath, maxSide) => Native.videoFrame(inPath, outPath, maxSide);
+
+// PDF passwords (see PdfSecurity.kt). A wrong password rejects with "wrong password".
+export const pdfProtect = (inPath, outPath, password) => Native.pdfProtect(inPath, outPath, password);
+export const pdfUnlock = (inPath, outPath, password) => Native.pdfUnlock(inPath, outPath, password);
+
+export const onStart =(listener) => Native.addListener("onStart", listener);
 export const onProgress = (listener) => Native.addListener("onProgress", listener);

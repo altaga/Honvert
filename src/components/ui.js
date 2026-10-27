@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useEffect } from "react";
-import { Image, PixelRatio, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Image, PixelRatio, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, {
   Easing,
   FadeInDown,
@@ -160,6 +160,65 @@ export function OptionGroup({ label, choices, value, onChange }) {
             </Tappable>
           );
         })}
+      </View>
+    </View>
+  );
+}
+
+// One labeled text field. `secure` hides the text (passwords).
+export function TextField({ label, value, onChange, hint, secure, keyboard }) {
+  return (
+    <View style={styles.group}>
+      <Mono>{label}</Mono>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={hint}
+        placeholderTextColor={colors.muted}
+        secureTextEntry={secure}
+        keyboardType={keyboard ?? "default"}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.field}
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+}
+
+// Start and end times typed as m:ss. Empty start means the beginning; empty end means the end of the file.
+export function TimeRange({ label, startLabel, endLabel, startMs, endMs, parse, format, onChange }) {
+  const [start, setStart] = useState(startMs ? format(startMs) : "");
+  const [end, setEnd] = useState(endMs ? format(endMs) : "");
+  return (
+    <View style={styles.group}>
+      <Mono>{label}</Mono>
+      <View style={styles.timeRow}>
+        <TextInput
+          value={start}
+          onChangeText={(text) => {
+            setStart(text);
+            onChange(parse(text), parse(end));
+          }}
+          placeholder={startLabel}
+          placeholderTextColor={colors.muted}
+          keyboardType="numbers-and-punctuation"
+          style={[styles.field, styles.flex]}
+          accessibilityLabel={startLabel}
+        />
+        <Mono>→</Mono>
+        <TextInput
+          value={end}
+          onChangeText={(text) => {
+            setEnd(text);
+            onChange(parse(start), parse(text));
+          }}
+          placeholder={endLabel}
+          placeholderTextColor={colors.muted}
+          keyboardType="numbers-and-punctuation"
+          style={[styles.field, styles.flex]}
+          accessibilityLabel={endLabel}
+        />
       </View>
     </View>
   );
@@ -368,6 +427,16 @@ const styles = StyleSheet.create({
   },
   optionSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   optionLabel: { fontFamily: type.body.fontFamily, fontWeight: "600", fontSize: 16 },
+  field: {
+    ...type.body,
+    color: colors.text,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.lineStrong,
+    borderRadius: radius,
+    paddingHorizontal: space.lg,
+  },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   disclosure: {
     flexDirection: "row",
     alignItems: "center",

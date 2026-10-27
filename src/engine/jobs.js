@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { PDF_QUALITY } from "./options";
+import { PDF_QUALITY, parsePageOrder, parsePageRanges } from "./options";
 import { runFfmpeg } from "./ffmpeg";
 import {
   decodeImage,
@@ -13,6 +13,8 @@ import {
   repairSniff,
   repairStrip,
   repairZip,
+  pdfProtect,
+  pdfUnlock,
 } from "../../modules/honvert-engine";
 import {
   FFMPEG_IMAGE_CODECS,
@@ -20,10 +22,22 @@ import {
   buildGifArgs,
   buildImageArgs,
   buildVideoArgs,
+  extensionFor,
   hasHardwareH264,
   probeFile,
 } from "./media";
-import { compressPdf, mergePdfs, pdfFromJpegs, pdfToImages, splitPdf, writeBytes } from "./pdf";
+import {
+  compressPdf,
+  extractPages,
+  mergePdfs,
+  pageCount,
+  pdfFromJpegs,
+  pdfToImages,
+  rotatePdf,
+  splitPdf,
+  watermarkPdf,
+  writeBytes,
+} from "./pdf";
 import { EngineError, JobCancelled, keyForFfmpeg, keyForPdf } from "./errors";
 import { reencodeTarget, repairExtension, stemOf } from "./names";
 
@@ -33,29 +47,56 @@ const toUri = (path) => `file://${path}`;
 const documentDir = toPath(FileSystem.documentDirectory);
 const cacheDir = toPath(FileSystem.cacheDirectory);
 
-export const OUTPUT_DIR = `${documentDir}converted/`;
+// Results live in the cache until the user shares them or saves a copy where they want it. Each new
+// conversion clears the previous results, so finished files never pile up on the phone.
+export const OUTPUT_DIR = `${cacheDir}honvert-results/`;
 export const WORK_DIR = `${cacheDir}honvert-work/`;
+// Versions before 0.2.0 kept every result here, in app storage that the system never cleans.
+const LEGACY_OUTPUT_DIR = `${documentDir}converted/`;
 
 export const MIME = {
   jpg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
   bmp: "image/bmp",
+  tiff: "image/tiff",
+  ico: "image/x-icon",
   gif: "image/gif",
   mp3: "audio/mpeg",
   m4a: "audio/mp4",
+  aac: "audio/aac",
+  opus: "audio/ogg",
   ogg: "audio/ogg",
   wav: "audio/wav",
   flac: "audio/flac",
+  alac: "audio/mp4",
   mp4: "video/mp4",
+  mkv: "video/x-matroska",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
   webm: "video/webm",
   pdf: "application/pdf",
 };
 
+// Outputs encoded as H.264, the only codec the phone's hardware encoder is used for.
+const H264_FORMATS = new Set(["mp4", "mkv", "mov"]);
+
 async function ensureDirs() {
+  for (const dir of [OUTPUT_DIR, WORK_DIR, LEGACY_OUTPUT_DIR]) {
+    await FileSystem.deleteAsync(toUri(dir), { idempotent: true }).catch(() => {});
+  }
   for (const dir of [OUTPUT_DIR, WORK_DIR]) {
     await FileSystem.makeDirectoryAsync(toUri(dir), { intermediates: true });
   }
+}
+
+const outputPath = (input, format) => `${OUTPUT_DIR}${stemOf(input.name)}-honvert-${stamp()}.${extensionFor(format)}`;
+
+// Length of the part that is converted: the trim range when there is one, the whole file otherwise.
+function trimmedMs(durationMs, options) {
+  const start = options.startMs || 0;
+  const end = options.endMs > start ? Math.min(options.endMs, durationMs || options.endMs) : durationMs;
+  return Math.max(0, end - start);
 }
 
 const stamp = () => Date.now().toString(36);
@@ -103,30 +144,36 @@ async function prepareImage(file, control) {
   const info = await probeFile(file.path).catch(() => ({ width: 0, codec: "" }));
   const rotated = exifOrientation(file.path) > 1;
   if (info.width && FFMPEG_IMAGE_CODECS.has(info.codec) && !rotated) {
-    return { path: file.path, info };
+    return { path: file.path, info, downscaled: false };
   }
 
   const decoded = `${WORK_DIR}decoded-${unique()}.png`;
+  let downscaled = false;
   try {
-    await decodeImage(file.path, decoded);
+    ({ downscaled } = await decodeImage(file.path, decoded));
   } catch (error) {
     throw new EngineError("error.unreadableImage", String(error?.message ?? error));
   }
   const decodedInfo = await probeFile(decoded);
   if (!decodedInfo.width) throw new EngineError("error.unreadableImage");
-  return { path: decoded, info: decodedInfo };
+  return { path: decoded, info: decodedInfo, downscaled };
 }
 
 async function runImage(files, options, ctx) {
   const input = files[0];
   const prepared = await prepareImage(input, ctx.control);
-  const output = `${OUTPUT_DIR}${stemOf(input.name)}-honvert-${stamp()}.${options.format}`;
+  const output = outputPath(input, options.format);
   const shared = {
     input: prepared.path,
     scalePercent: options.scalePercent,
     ratio: options.ratio,
     width: prepared.info.width,
     height: prepared.info.height,
+    rotate: options.rotate,
+    flip: options.flip,
+    cropRect: options.cropRect,
+    pixelWidth: options.pixelWidth,
+    pixelHeight: options.pixelHeight,
   };
 
   if (options.format === "webp") {
@@ -137,15 +184,21 @@ async function runImage(files, options, ctx) {
       control: ctx.control,
     });
     ctx.report(1, 2);
-    await encodeWebp(intermediate, output, options.quality);
-    return { outputs: [{ path: output, mime: MIME.webp }], note: null };
+    const { downscaled: encodedDownscaled } = await encodeWebp(intermediate, output, options.quality);
+    return {
+      outputs: [{ path: output, mime: MIME.webp }],
+      note: (prepared.downscaled || encodedDownscaled) ? "result.downscaled" : null,
+    };
   }
 
   await runAttempts(
     [buildImageArgs({ ...shared, output, format: options.format, quality: options.quality })],
     { onFraction: ctx.fraction(0, 1), control: ctx.control },
   );
-  return { outputs: [{ path: output, mime: MIME[options.format] }], note: null };
+  return {
+    outputs: [{ path: output, mime: MIME[options.format] }],
+    note: prepared.downscaled ? "result.downscaled" : null,
+  };
 }
 
 async function runGif(files, options, ctx) {
@@ -166,7 +219,8 @@ async function runGif(files, options, ctx) {
     still = true;
   }
 
-  const output = `${OUTPUT_DIR}${stemOf(input.name)}-honvert-${stamp()}.gif`;
+  const output = outputPath(input, "gif");
+  const durationMs = still ? 0 : trimmedMs(info.durationMs, options);
   await runAttempts(
     [
       buildGifArgs({
@@ -179,9 +233,20 @@ async function runGif(files, options, ctx) {
         inputWidth: info.width,
         inputHeight: info.height,
         still,
+        playback: options.playback,
+        loop: options.loop,
+        startMs: options.startMs,
+        endMs: options.endMs,
+        cropRect: options.cropRect,
+        colors: options.colors,
+        dither: options.dither,
       }),
     ],
-    { outputDurationMs: info.durationMs / options.speed, onFraction: ctx.fraction(0, 1), control: ctx.control },
+    {
+      outputDurationMs: (durationMs * (options.playback === "boomerang" ? 2 : 1)) / options.speed,
+      onFraction: ctx.fraction(0, 1),
+      control: ctx.control,
+    },
   );
   return { outputs: [{ path: output, mime: MIME.gif }], note: null };
 }
@@ -191,7 +256,7 @@ async function runAudio(files, options, ctx) {
   const info = await probeFile(input.path).catch(() => ({ hasAudio: false, durationMs: 0 }));
   if (!info.hasAudio) throw new EngineError("error.noAudio");
 
-  const output = `${OUTPUT_DIR}${stemOf(input.name)}-honvert-${stamp()}.${options.format}`;
+  const output = outputPath(input, options.format);
   await runAttempts(
     [
       buildAudioArgs({
@@ -200,9 +265,18 @@ async function runAudio(files, options, ctx) {
         format: options.format,
         bitrate: options.bitrate,
         speed: options.speed,
+        channels: options.channels,
+        normalize: options.normalize,
+        startMs: options.startMs,
+        endMs: options.endMs,
+        tags: { title: options.title, artist: options.artist, album: options.album, year: options.year },
       }),
     ],
-    { outputDurationMs: info.durationMs / options.speed, onFraction: ctx.fraction(0, 1), control: ctx.control },
+    {
+      outputDurationMs: trimmedMs(info.durationMs, options) / options.speed,
+      onFraction: ctx.fraction(0, 1),
+      control: ctx.control,
+    },
   );
   return { outputs: [{ path: output, mime: MIME[options.format] }], note: null };
 }
@@ -212,7 +286,7 @@ async function runVideo(files, options, ctx) {
   const info = await probeFile(input.path).catch(() => ({ hasVideo: false, durationMs: 0, width: 0, height: 0 }));
   if (!info.hasVideo) throw new EngineError("error.noVideo");
 
-  const output = `${OUTPUT_DIR}${stemOf(input.name)}-honvert-${stamp()}.${options.format}`;
+  const output = outputPath(input, options.format);
   const base = {
     input: input.path,
     output,
@@ -224,16 +298,24 @@ async function runVideo(files, options, ctx) {
     inputWidth: info.width,
     inputHeight: info.height,
     keepAudio: options.keepAudio,
+    fps: options.fps,
+    rotate: options.rotate,
+    flip: options.flip,
+    normalize: options.normalize,
+    metadata: options.metadata,
+    startMs: options.startMs,
+    endMs: options.endMs,
+    cropRect: options.cropRect,
   };
 
   // GPU (MediaCodec) first when the phone has a hardware H.264 encoder; CPU if it fails.
-  const useGpu = options.format === "mp4" && options.gpu && hasHardwareH264();
+  const useGpu = H264_FORMATS.has(options.format) && options.gpu && hasHardwareH264();
   const attempts = useGpu
     ? [buildVideoArgs({ ...base, hardware: true }), buildVideoArgs({ ...base, hardware: false })]
     : [buildVideoArgs({ ...base, hardware: false })];
 
   const { usedFallback } = await runAttempts(attempts, {
-    outputDurationMs: info.durationMs / options.speed,
+    outputDurationMs: trimmedMs(info.durationMs, options) / options.speed,
     onFraction: ctx.fraction(0, 1),
     control: ctx.control,
   });
@@ -309,6 +391,62 @@ async function runPdf(files, options, ctx) {
       const output = `${OUTPUT_DIR}${stem}-comprimido-${stamp()}.pdf`;
       await writeBytes(output, bytes);
       return { outputs: [{ path: output, mime: MIME.pdf }], note: "result.pdfRaster" };
+    }
+
+    if (options.mode === "extract") {
+      const pages = parsePageRanges(options.pages, await pageCount(files[0].path));
+      if (!pages.length) throw new EngineError("error.pdfPages");
+      const output = `${OUTPUT_DIR}${stem}-p${pages[0]}-${pages[pages.length - 1]}-${stamp()}.pdf`;
+      await writeBytes(output, await extractPages(files[0].path, pages));
+      return { outputs: [{ path: output, mime: MIME.pdf }], note: null };
+    }
+
+    // Pages in the order typed; pages left out are dropped.
+    if (options.mode === "organize") {
+      const pages = parsePageOrder(options.order, await pageCount(files[0].path));
+      if (!pages.length) throw new EngineError("error.pdfPages");
+      const output = `${OUTPUT_DIR}${stem}-ordenado-${stamp()}.pdf`;
+      await writeBytes(output, await extractPages(files[0].path, pages));
+      return { outputs: [{ path: output, mime: MIME.pdf }], note: null };
+    }
+
+    if (options.mode === "rotate") {
+      // Empty pages field turns every page; otherwise only the pages listed.
+      const typed = String(options.pages ?? "").trim();
+      const pages = typed ? parsePageRanges(typed, await pageCount(files[0].path)) : null;
+      if (pages && !pages.length) throw new EngineError("error.pdfPages");
+      const output = `${OUTPUT_DIR}${stem}-rot${options.rotate}-${stamp()}.pdf`;
+      await writeBytes(output, await rotatePdf(files[0].path, options.rotate, pages));
+      return { outputs: [{ path: output, mime: MIME.pdf }], note: null };
+    }
+
+    if (options.mode === "watermark") {
+      const text = String(options.watermark ?? "").trim();
+      if (!text) throw new EngineError("error.watermarkEmpty");
+      let bytes;
+      try {
+        bytes = await watermarkPdf(files[0].path, text, options.opacity);
+      } catch (error) {
+        // The built-in PDF font only covers Latin text.
+        if (/cannot encode|WinAnsi/i.test(String(error?.message))) throw new EngineError("error.watermarkScript");
+        throw error;
+      }
+      const output = `${OUTPUT_DIR}${stem}-marca-${stamp()}.pdf`;
+      await writeBytes(output, bytes);
+      return { outputs: [{ path: output, mime: MIME.pdf }], note: null };
+    }
+
+    if (options.mode === "protect" || options.mode === "unlock") {
+      if (!options.password) throw new EngineError("error.passwordEmpty");
+      const output = `${OUTPUT_DIR}${stem}-${options.mode === "protect" ? "protegido" : "abierto"}-${stamp()}.pdf`;
+      try {
+        if (options.mode === "protect") await pdfProtect(files[0].path, output, options.password);
+        else await pdfUnlock(files[0].path, output, options.password);
+      } catch (error) {
+        if (/wrong password/i.test(String(error?.message))) throw new EngineError("error.pdfPassword");
+        throw error;
+      }
+      return { outputs: [{ path: output, mime: MIME.pdf }], note: null };
     }
   } catch (error) {
     if (error instanceof EngineError || error instanceof JobCancelled) throw error;
@@ -505,6 +643,35 @@ async function runRepair(files, options, ctx) {
 }
 
 // Runs one conversion. Returns { outputs: [{ path, mime }], note: translationKey | null }.
+// Batch: the same settings for every selected file, one after another. Files that fail are skipped and
+// reported; the run only fails when none of them could be converted.
+async function runEach(run, files, options, ctx) {
+  if (files.length === 1) return run(files, options, ctx);
+  // A drawn crop box belongs to one picture; a batch uses the centered preset instead.
+  const shared = { ...options, cropRect: null };
+  const outputs = [];
+  let note = null;
+  let firstError = null;
+  for (const [index, file] of files.entries()) {
+    const part = (value) => (index + value) / files.length;
+    const sub = {
+      control: ctx.control,
+      fraction: (step, steps) => (fraction) => ctx.report(part((step + fraction) / steps), 1),
+      report: (done, total) => ctx.report(part(total ? done / total : 0), 1),
+    };
+    try {
+      const result = await run([file], shared, sub);
+      outputs.push(...result.outputs);
+      note = note ?? result.note;
+    } catch (error) {
+      if (error instanceof JobCancelled) throw error;
+      firstError = firstError ?? error;
+    }
+  }
+  if (!outputs.length) throw firstError ?? new EngineError("error.generic", "no files");
+  return { outputs, note: firstError ? "result.batchPartial" : note };
+}
+
 export async function runConversion(category, files, options, { onProgress, control }) {
   await ensureDirs();
 
@@ -516,13 +683,13 @@ export async function runConversion(category, files, options, { onProgress, cont
 
   switch (category) {
     case "image":
-      return runImage(files, options, ctx);
+      return runEach(runImage, files, options, ctx);
     case "gif":
-      return runGif(files, options, ctx);
+      return runEach(runGif, files, options, ctx);
     case "audio":
-      return runAudio(files, options, ctx);
+      return runEach(runAudio, files, options, ctx);
     case "video":
-      return runVideo(files, options, ctx);
+      return runEach(runVideo, files, options, ctx);
     case "pdf":
       return runPdf(files, options, ctx);
     case "repair":

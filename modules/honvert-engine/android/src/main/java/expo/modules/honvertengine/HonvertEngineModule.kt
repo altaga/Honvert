@@ -97,8 +97,7 @@ class HonvertEngineModule : Module() {
 
     // Encodes a PNG to WebP with Android's built-in encoder (the FFmpeg build has no libwebp).
     AsyncFunction("encodeWebp") { inPath: String, outPath: String, quality: Int ->
-      val bitmap = BitmapFactory.decodeFile(inPath)
-        ?: throw IllegalStateException("No se pudo leer la imagen intermedia.")
+      val (bitmap, reduced) = decodeBounded(inPath)
       val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Bitmap.CompressFormat.WEBP_LOSSY
       } else {
@@ -106,7 +105,7 @@ class HonvertEngineModule : Module() {
       }
       FileOutputStream(outPath).use { out -> bitmap.compress(format, quality, out) }
       bitmap.recycle()
-      outPath
+      mapOf("path" to outPath, "downscaled" to reduced)
     }
 
     // EXIF orientation (1 = normal). FFmpeg on some builds ignores it, so the app checks it here.
@@ -123,18 +122,27 @@ class HonvertEngineModule : Module() {
 
     // Decodes any image Android understands (WEBP, HEIF/HEIC, ...) into a PNG that FFmpeg can read.
     // Android 9+ uses ImageDecoder (applies EXIF orientation); older versions fall back to BitmapFactory.
+    // Images bigger than ImageBudget are sampled down, and the result says so.
     AsyncFunction("decodeImage") { inPath: String, outPath: String ->
+      var reduced = false
       val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         val source = ImageDecoder.createSource(File(inPath))
-        ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
           decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+          val sample = ImageBudget.sampleSize(info.size.width, info.size.height)
+          if (sample > 1) {
+            decoder.setTargetSampleSize(sample)
+            reduced = true
+          }
         }
       } else {
-        BitmapFactory.decodeFile(inPath) ?: throw IllegalStateException("decode failed")
+        val (decoded, wasReduced) = decodeBounded(inPath)
+        reduced = wasReduced
+        decoded
       }
       FileOutputStream(outPath).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
       bitmap.recycle()
-      outPath
+      mapOf("path" to outPath, "downscaled" to reduced)
     }
 
     // Number of pages in a PDF.
@@ -221,6 +229,52 @@ class HonvertEngineModule : Module() {
       RepairTools.extractH264(input, output, reference)
     }
 
+    // First frame of a video as a small JPEG, upright, for the crop box preview. Some Android versions return
+    // the frame unrotated, so it is turned here when its size still matches the stored (unrotated) size.
+    AsyncFunction("videoFrame") { inPath: String, outPath: String, maxSide: Int ->
+      val retriever = android.media.MediaMetadataRetriever()
+      try {
+        retriever.setDataSource(inPath)
+        val frame = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+          ?: throw IllegalStateException("no frame")
+        val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        val storedWidth = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: frame.width
+        val upright = if (rotation % 360 != 0 && frame.width == storedWidth) {
+          val matrix = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
+          Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true)
+        } else {
+          frame
+        }
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(upright.width, upright.height))
+        val small = if (scale < 1f) {
+          Bitmap.createScaledBitmap(
+            upright,
+            (upright.width * scale).toInt().coerceAtLeast(1),
+            (upright.height * scale).toInt().coerceAtLeast(1),
+            true,
+          )
+        } else {
+          upright
+        }
+        FileOutputStream(outPath).use { out -> small.compress(Bitmap.CompressFormat.JPEG, 85, out) }
+        outPath
+      } finally {
+        retriever.release()
+      }
+    }
+
+    // PDF passwords (PdfSecurity.kt).
+    AsyncFunction("pdfProtect") { input: String, output: String, password: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("app context not ready")
+      PdfSecurity.protect(context, input, output, password)
+      output
+    }
+    AsyncFunction("pdfUnlock") { input: String, output: String, password: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("app context not ready")
+      PdfSecurity.unlock(context, input, output, password)
+      output
+    }
+
     // Lists encoders for a MIME type, marking which ones are hardware accelerated.
     Function("getEncoders") { mime: String ->
       MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
@@ -232,5 +286,16 @@ class HonvertEngineModule : Module() {
   private fun isHardware(info: MediaCodecInfo): Boolean {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return info.isHardwareAccelerated
     return !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
+  }
+
+  // Decodes an image with BitmapFactory, sampled down when it is bigger than the budget. Returns the bitmap and
+  // whether it was reduced, so the result can say so.
+  private fun decodeBounded(path: String): Pair<Bitmap, Boolean> {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    val sample = ImageBudget.sampleSize(bounds.outWidth, bounds.outHeight)
+    val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+      ?: throw IllegalStateException("decode failed")
+    return Pair(bitmap, sample > 1)
   }
 }

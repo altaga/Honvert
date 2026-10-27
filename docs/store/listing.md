@@ -20,11 +20,11 @@ YOUR FILES NEVER LEAVE YOUR PHONE
 - Works offline, anywhere.
 
 WHAT YOU CAN DO
-- Images: convert between JPG, PNG, WebP and BMP. Adjust quality, resize by percentage, and crop to an aspect ratio. Photos keep their correct orientation.
-- GIF: make GIFs from videos or existing GIFs. Set the frame rate, width, speed and crop.
-- Audio: convert between MP3, M4A, OGG, WAV and FLAC. Set the bitrate and change the speed.
-- Video: convert to MP4 or WebM. Choose the resolution, bitrate, speed and aspect ratio, and keep or remove the audio.
-- PDF: turn images into a PDF, merge or split PDFs, export pages as JPG or PNG, and compress PDFs.
+- Images: convert between JPG, PNG, WebP, TIFF, BMP and ICO, from HEIC and AVIF too. Adjust quality, resize by percentage or exact pixels, crop with a box you drag, rotate and mirror. Location and camera data are removed. Convert many at once.
+- GIF: make GIFs from videos or existing GIFs. Set the frame rate, width, speed, crop, colors, repeat count, reverse or boomerang, and cut a time range.
+- Audio: convert between MP3, M4A, AAC, OPUS, OGG, WAV, FLAC and ALAC, or pull the sound out of a video. Set the bitrate and speed, cut a time range, switch to mono, even out the volume, and edit title, artist, album and year.
+- Video: convert to MP4, MKV, MOV, AVI or WebM, up to 4K. Choose the resolution, quality, frame rate and speed, crop with a box, rotate, mirror, cut a time range, and keep or remove the audio.
+- PDF: turn images into a PDF, merge, split, extract, reorder, delete or rotate pages, export pages as JPG or PNG, compress, add a watermark, and add or remove a password.
 
 KEEPS WORKING IN THE BACKGROUND
 Long conversions keep running while you use other apps. The progress notification shows how far along the conversion is, and you can cancel it from there.
@@ -35,7 +35,7 @@ GOOD TO KNOW
 - Conversions use FFmpeg, an open-source library. The full license notices are in Settings.
 
 **Release notes (500):**
-New in 0.2.0: a Repair tab that recovers what can still be read from damaged JPG, PNG, GIF, PDF, ZIP and Office files, and from MP4, MOV, MKV, AVI and WEBM videos. Save any result into a folder you choose with the Download icon. Thumbnails load faster. Fixes for button labels and file names.
+New in 0.2.0: Repair tab for damaged files. Save results to any folder. Crop with a box you drag, exact pixel sizes, rotate and mirror. TIFF, ICO, AAC, OPUS, ALAC, MKV, MOV, AVI and 4K. Trim audio, video and GIFs. Audio tags, mono and volume leveling. GIF colors, reverse and boomerang. PDF passwords, watermarks, extract, reorder and rotate pages. Convert many files at once. Size estimate before converting. Very large photos are limited to 24 MP.
 
 **Category:** Tools
 **Contact email:** altaga@protonmail.com
@@ -62,11 +62,11 @@ TUS ARCHIVOS NUNCA SALEN DE TU TELÉFONO
 - Funciona sin conexión, en cualquier lugar.
 
 LO QUE PUEDES HACER
-- Imágenes: convierte entre JPG, PNG, WebP y BMP. Ajusta la calidad, cambia el tamaño por porcentaje y recorta a una proporción. Las fotos mantienen su orientación correcta.
-- GIF: crea GIF a partir de videos o de otros GIF. Ajusta los fotogramas por segundo, el ancho, la velocidad y el recorte.
-- Audio: convierte entre MP3, M4A, OGG, WAV y FLAC. Ajusta la tasa de bits y cambia la velocidad.
-- Video: convierte a MP4 o WebM. Elige la resolución, la tasa de bits, la velocidad y la proporción, y conserva o quita el audio.
-- PDF: convierte imágenes en PDF, une o divide PDF, exporta páginas como JPG o PNG y comprime PDF.
+- Imágenes: convierte entre JPG, PNG, WebP, TIFF, BMP e ICO, también desde HEIC y AVIF. Ajusta la calidad, cambia el tamaño por porcentaje o en píxeles exactos, recorta con un recuadro que arrastras, gira y voltea. Se quitan la ubicación y los datos de la cámara. Convierte muchas a la vez.
+- GIF: crea GIF a partir de videos o de otros GIF. Ajusta los fotogramas por segundo, el ancho, la velocidad, el recorte, los colores y las repeticiones, ponlo al revés o en bumerán, y corta un tramo.
+- Audio: convierte entre MP3, M4A, AAC, OPUS, OGG, WAV, FLAC y ALAC, o saca el sonido de un video. Ajusta la tasa de bits y la velocidad, corta un tramo, pasa a mono, iguala el volumen y edita título, artista, álbum y año.
+- Video: convierte a MP4, MKV, MOV, AVI o WebM, hasta 4K. Elige la resolución, la calidad, los fotogramas por segundo y la velocidad, recorta con un recuadro, gira, voltea, corta un tramo y conserva o quita el audio.
+- PDF: convierte imágenes en PDF, une, divide, extrae, reordena, borra o gira páginas, exporta páginas como JPG o PNG, comprime, añade marca de agua y pon o quita contraseña.
 
 SIGUE TRABAJANDO EN SEGUNDO PLANO
 Las conversiones largas siguen en marcha mientras usas otras apps. La notificación de progreso muestra cuánto falta, y desde ahí puedes cancelarla.
@@ -77,7 +77,7 @@ A TENER EN CUENTA
 - Las conversiones usan FFmpeg, una biblioteca de código abierto. Los avisos completos de licencia están en Ajustes.
 
 **Notas de la versión (500):**
-Novedades de la 0.2.0: una pestaña Reparar que recupera lo que aún se puede leer de archivos JPG, PNG, GIF, PDF, ZIP y Office dañados, y de videos MP4, MOV, MKV, AVI y WEBM. Guarda cualquier resultado en la carpeta que elijas con el icono de descarga. Las miniaturas cargan más rápido. Correcciones en textos y botones.
+Novedades 0.2.0: pestaña Reparar. Guarda en la carpeta que elijas. Recorte con recuadro, tamaño en píxeles, girar y voltear. TIFF, ICO, AAC, OPUS, ALAC, MKV, MOV, AVI y 4K. Corta audio, video y GIF. Etiquetas de audio, mono y volumen igualado. GIF con colores, al revés y bumerán. PDF con contraseña, marca de agua, extraer, ordenar y girar páginas. Varios archivos a la vez. Tamaño estimado. Fotos enormes limitadas a 24 MP.
 
 **Categoría:** Herramientas
 **Correo de contacto:** altaga@protonmail.com

@@ -20,19 +20,27 @@ import {
   Reveal,
   SectionHeader,
   Stat,
+  TextField,
+  TimeRange,
   formatBytes,
 } from "../../components/ui";
 import { prefs } from "../../core/prefs";
 import { colors, radius, space, type } from "../../core/theme";
+import { CropBox } from "../../components/CropBox";
+import { initialRect, normalizedAspect } from "../../engine/crop";
 import { cancelControl, fileUri, newControl, runConversion, toPath } from "../../engine/jobs";
 import { EngineError, JobCancelled } from "../../engine/errors";
 import { fileNameFor, withoutExtension } from "../../engine/names";
 import { requestNotificationPermission } from "../../engine/background";
 import { setEngineLabels } from "../../engine/labels";
-import { saveToFolder } from "../../../modules/honvert-engine";
-import { probeFile } from "../../engine/media";
-import { CATEGORIES, PDF_MODES } from "../../engine/options";
+import { saveToFolder, videoFrame } from "../../../modules/honvert-engine";
+import { BITRATE_AUDIO, estimateBytes, probeFile } from "../../engine/media";
+import { CATEGORIES, PDF_MODES, formatTime, parseTime } from "../../engine/options";
 import { useT } from "../../i18n";
+
+const CROPPABLE = new Set(["image", "gif", "video"]);
+// Audio bitrate each video container is encoded with (see buildVideoArgs), for the size estimate.
+const VIDEO_AUDIO_KBPS = { webm: 96, avi: 192 };
 
 export default function ConvertRoute() {
   const { kind } = useLocalSearchParams();
@@ -90,7 +98,7 @@ function Converter({ kind, category }) {
     ...primary
       .filter((control) => control.key !== "mode")
       .map((control) => {
-        const choice = control.choices.find((item) => item.value === options[control.key]);
+        const choice = control.choices?.find((item) => item.value === options[control.key]);
         return choice ? (choice.labelKey ? t(choice.labelKey) : choice.label) : null;
       }),
   ]
@@ -112,6 +120,49 @@ function Converter({ kind, category }) {
   }, [files, kind]);
   const mediaInfo = files.length === 1 && info?.path === files[0].path ? info.data : null;
 
+  // Picture under the crop box: the file itself for images and GIFs, the first frame for videos. The frame
+  // is tagged with its source, so a frame from an earlier file never shows.
+  const [frame, setFrame] = useState(null);
+  const croppable = CROPPABLE.has(kind) && files.length === 1;
+  useEffect(() => {
+    let active = true;
+    if (!croppable || kind !== "video") return;
+    const source = files[0].path;
+    const folder = `${toPath(FileSystem.cacheDirectory)}honvert-preview/`;
+    FileSystem.deleteAsync(fileUri(folder), { idempotent: true })
+      .then(() => FileSystem.makeDirectoryAsync(fileUri(folder), { intermediates: true }))
+      .then(() => videoFrame(source, `${folder}frame-${Date.now()}.jpg`, 720))
+      .then((path) => active && setFrame({ source, path }))
+      .catch(() => active && setFrame(null));
+    return () => {
+      active = false;
+    };
+  }, [croppable, files, kind]);
+  const previewPath = !croppable
+    ? null
+    : kind !== "video"
+      ? files[0].path
+      : frame?.source === files[0].path
+        ? frame.path
+        : null;
+  const cropAspect = mediaInfo ? normalizedAspect(options.ratio, mediaInfo.width, mediaInfo.height) : null;
+  const showCrop = Boolean(previewPath) && options.ratio !== "original" && mediaInfo?.width > 0;
+
+  // Size estimate for bitrate-based outputs. Images and lossless audio have no reliable estimate.
+  const estimate = mediaInfo
+    ? estimateBytes({
+        durationMs: mediaInfo.durationMs,
+        videoKbps: kind === "video" ? options.bitrate : 0,
+        audioKbps:
+          kind === "audio"
+            ? BITRATE_AUDIO.has(options.format) ? options.bitrate : 0
+            : kind === "video" && options.keepAudio && mediaInfo.hasAudio ? VIDEO_AUDIO_KBPS[options.format] ?? 128 : 0,
+        speed: options.speed,
+        startMs: options.startMs,
+        endMs: options.endMs,
+      })
+    : 0;
+
   function resetResult() {
     setResult(null);
     setMessage("");
@@ -124,6 +175,12 @@ function Converter({ kind, category }) {
   }
 
   function setOption(key, value) {
+    // A new ratio starts from its largest centered box; the user drags it from there.
+    if (key === "ratio") {
+      const rect = value !== "original" && mediaInfo?.width ? initialRect(value, mediaInfo.width, mediaInfo.height) : null;
+      setOptions((previous) => ({ ...previous, ratio: value, cropRect: rect }));
+      return;
+    }
     setOptions((previous) => ({ ...previous, [key]: value }));
     if (key === "mode") {
       setFiles([]);
@@ -147,6 +204,7 @@ function Converter({ kind, category }) {
         size: asset.size,
       })),
     );
+    setOptions((previous) => ({ ...previous, cropRect: null }));
     resetResult();
   }
 
@@ -231,15 +289,45 @@ function Converter({ kind, category }) {
     }
   }
 
-  const renderControl = (control) => (
-    <OptionGroup
-      key={control.key}
-      label={t(control.labelKey)}
-      choices={control.choices}
-      value={options[control.key]}
-      onChange={(value) => setOption(control.key, value)}
-    />
-  );
+  const renderControl = (control) => {
+    if (control.type === "time") {
+      return (
+        <TimeRange
+          key={control.key}
+          label={t(control.labelKey)}
+          startLabel={t("trim.start")}
+          endLabel={t("trim.end")}
+          startMs={options.startMs}
+          endMs={options.endMs}
+          parse={parseTime}
+          format={formatTime}
+          onChange={(startMs, endMs) => setOptions((previous) => ({ ...previous, startMs, endMs }))}
+        />
+      );
+    }
+    if (control.type === "text") {
+      return (
+        <TextField
+          key={control.key}
+          label={t(control.labelKey)}
+          hint={control.hintKey ? t(control.hintKey) : undefined}
+          value={options[control.key]}
+          secure={control.secure}
+          keyboard={control.keyboard}
+          onChange={(value) => setOption(control.key, value)}
+        />
+      );
+    }
+    return (
+      <OptionGroup
+        key={control.key}
+        label={t(control.labelKey)}
+        choices={control.choices}
+        value={options[control.key]}
+        onChange={(value) => setOption(control.key, value)}
+      />
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -303,6 +391,21 @@ function Converter({ kind, category }) {
                 {showAdvanced && advanced.map(renderControl)}
               </View>
             )}
+            {showCrop && (
+              <View style={styles.crop}>
+                <Mono>{t("crop.hint")}</Mono>
+                <CropBox
+                  path={previewPath}
+                  pictureWidth={mediaInfo.width}
+                  pictureHeight={mediaInfo.height}
+                  rect={options.cropRect ?? initialRect(options.ratio, mediaInfo.width, mediaInfo.height)}
+                  aspect={cropAspect}
+                  label={t("opt.crop")}
+                  onChange={(cropRect) => setOptions((previous) => ({ ...previous, cropRect }))}
+                />
+              </View>
+            )}
+            {estimate > 0 &&<Mono>{t("estimate.size", { size: formatBytes(estimate) })}</Mono>}
           </Reveal>
         )}
 
@@ -410,6 +513,7 @@ const styles = StyleSheet.create({
   content: { padding: space.xl, gap: space.xxl },
   section: { gap: space.lg },
   advanced: { gap: space.md },
+  crop: { gap: space.sm },
   statsRow: { flexDirection: "row", flexWrap: "wrap", gap: space.xl },
   bottom: {
     position: "absolute",

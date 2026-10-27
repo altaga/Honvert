@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import * as FileSystem from "expo-file-system/legacy";
-import { PDFDocument } from "pdf-lib";
+import { degrees, PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { renderPdfPage } from "../../modules/honvert-engine";
 
 export const toUri = (path) => `file://${path}`;
@@ -52,6 +52,50 @@ export async function splitPdf(path) {
     parts.push({ pageNumber: index + 1, bytes: await part.save() });
   }
   return parts;
+}
+
+// A new PDF with only the given 1-based pages, in order.
+export async function extractPages(path, pages) {
+  const source = await PDFDocument.load(await readBytes(path), { ignoreEncryption: true });
+  const out = await PDFDocument.create();
+  const copied = await out.copyPages(source, pages.map((page) => page - 1));
+  copied.forEach((page) => out.addPage(page));
+  return out.save();
+}
+
+// Turns pages clockwise by the given degrees, on top of any rotation they already had. `pages` lists
+// 1-based page numbers; null turns every page.
+export async function rotatePdf(path, angle, pages = null) {
+  const pdf = await PDFDocument.load(await readBytes(path), { ignoreEncryption: true });
+  const chosen = pages ? new Set(pages) : null;
+  pdf.getPages().forEach((page, index) => {
+    if (chosen && !chosen.has(index + 1)) return;
+    page.setRotation(degrees((page.getRotation().angle + angle) % 360));
+  });
+  return pdf.save();
+}
+
+// Diagonal text across the middle of every page. The built-in font covers Latin text only, so other
+// scripts are rejected before anything is drawn.
+export async function watermarkPdf(path, text, opacity) {
+  const pdf = await PDFDocument.load(await readBytes(path), { ignoreEncryption: true });
+  const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+  font.encodeText(text);
+  for (const page of pdf.getPages()) {
+    const { width, height } = page.getSize();
+    const size = Math.min(width, height) / Math.max(4, text.length * 0.6);
+    const textWidth = font.widthOfTextAtSize(text, size);
+    page.drawText(text, {
+      x: width / 2 - (textWidth / 2) * Math.SQRT1_2,
+      y: height / 2 - (textWidth / 2) * Math.SQRT1_2,
+      size,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+      opacity,
+      rotate: degrees(45),
+    });
+  }
+  return pdf.save();
 }
 
 export async function pageCount(path) {
