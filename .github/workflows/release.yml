@@ -1,0 +1,147 @@
+# Release pipeline, started by hand. It never runs on a push or a tag.
+#
+#   gh workflow run release.yml -f mode=build-only
+#   gh workflow run release.yml -f mode=upload-internal
+#   gh workflow run release.yml -f mode=upload-production -f confirm=publicar
+#
+# build-only         builds and signs the bundle and keeps it as an artifact. Nothing reaches Play.
+# upload-internal    also sends the bundle to Play internal testing.
+# upload-production  also sends it to the production track. It refuses to run unless confirm is "publicar".
+
+name: Release (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "build-only, upload-internal or upload-production"
+        type: choice
+        options:
+          - build-only
+          - upload-internal
+          - upload-production
+        default: build-only
+      confirm:
+        description: 'Type publicar to allow upload-production'
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# One release at a time. A second run waits instead of racing the first one to Play.
+concurrency:
+  group: play-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and sign the bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The components the local release build uses. Licenses are accepted inline.
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "cmake;4.1.2" "ndk;27.1.12297006"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: JavaScript tests and lint
+        run: |
+          npm test
+          npm run lint
+
+      # android/ is not in git. It is generated from app.json and the Expo plugins, as it is locally.
+      - name: Generate the native project
+        run: |
+          npx expo prebuild --platform android --no-install
+          chmod +x android/gradlew
+
+      - name: JVM tests for the native repair code
+        working-directory: android
+        run: ./gradlew :honvert-engine:testDebugUnitTest --console=plain
+
+      - name: Restore the upload key
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+        run: echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.p12"
+
+      - name: Point Gradle at the upload key
+        env:
+          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: |
+          mkdir -p "$HOME/.gradle"
+          {
+            echo "honvertUploadStoreFile=$RUNNER_TEMP/upload.p12"
+            echo "honvertUploadStorePassword=$UPLOAD_STORE_PASSWORD"
+            echo "honvertUploadKeyAlias=$UPLOAD_KEY_ALIAS"
+            echo "honvertUploadKeyPassword=$UPLOAD_KEY_PASSWORD"
+          } >> "$HOME/.gradle/gradle.properties"
+
+      - name: Build the release bundle
+        working-directory: android
+        run: ./gradlew :app:bundleRelease --console=plain
+
+      - name: Check the signature
+        run: |
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify -verbose -certs "$AAB" | tee "$RUNNER_TEMP/jarsigner.txt"
+          grep -q "jar verified" "$RUNNER_TEMP/jarsigner.txt"
+          if grep -q "Android Debug" "$RUNNER_TEMP/jarsigner.txt"; then
+            echo "::error::The bundle is signed with the debug key"
+            exit 1
+          fi
+
+      - name: Remove the key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.p12" "$HOME/.gradle/gradle.properties"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: honvert-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  upload:
+    name: Upload to Google Play
+    needs: build
+    if: ${{ inputs.mode != 'build-only' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require the confirmation word for production
+        if: ${{ inputs.mode == 'upload-production' && inputs.confirm != 'publicar' }}
+        run: |
+          echo "::error::upload-production needs confirm=publicar"
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: honvert-aab
+
+      - name: Upload to the Play track
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.honvert.app
+          releaseFiles: app-release.aab
+          track: ${{ inputs.mode == 'upload-production' && 'production' || 'internal' }}
+          status: completed
