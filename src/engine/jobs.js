@@ -1,7 +1,19 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { PDF_QUALITY } from "./options";
 import { runFfmpeg } from "./ffmpeg";
-import { decodeImage, encodeWebp, exifOrientation } from "../../modules/honvert-engine";
+import {
+  decodeImage,
+  encodeWebp,
+  exifOrientation,
+  extractH264,
+  repairGifTrailer,
+  repairJpegEoi,
+  repairPdf,
+  repairPng,
+  repairSniff,
+  repairStrip,
+  repairZip,
+} from "../../modules/honvert-engine";
 import {
   FFMPEG_IMAGE_CODECS,
   buildAudioArgs,
@@ -344,6 +356,209 @@ async function runPdf(files, options, ctx) {
   throw new EngineError("error.unknownMode");
 }
 
+// Repair keeps whatever can still be read from a damaged file. Native code handles bytes (signatures,
+// PNG and ZIP structure, PDF cross-references); FFmpeg handles media. A file that cannot be recovered
+// reports an error key instead of leaving junk behind.
+const REPAIR_MIME = {
+  ...MIME,
+  jpeg: "image/jpeg",
+  m4v: "video/x-m4v",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  aac: "audio/aac",
+  opus: "audio/ogg",
+  zip: "application/zip",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  epub: "application/epub+zip",
+};
+const REPAIR_VIDEO = ["mp4", "mov", "mkv", "webm", "avi"];
+const REPAIR_AUDIO = ["m4a", "mp3", "wav", "ogg", "flac"];
+const REPAIR_OFFICE = ["docx", "xlsx", "pptx", "odt", "ods", "odp", "epub"];
+
+// Output extension for a detected type. ZIP-based documents keep their own extension when they have one.
+function repairExtension(type, name) {
+  const original = (name.split(".").pop() || "").toLowerCase();
+  if (type === "zip") return REPAIR_OFFICE.includes(original) ? original : "zip";
+  if (type === "jpeg") return "jpg";
+  if (type === "unknown") return null;
+  return type;
+}
+
+// Native failures carry a technical reason; the user only sees a translated key.
+async function nativeStep(step) {
+  try {
+    return await step();
+  } catch (error) {
+    throw new EngineError("error.corrupt", String(error?.message ?? error));
+  }
+}
+
+// A repair that left nothing readable is a failure: the output is removed and reported as corrupt.
+async function requireReadable(path, kind) {
+  const info = await probeFile(path).catch(() => null);
+  const readable = kind === "image" ? (info?.width ?? 0) > 0 : Boolean(info?.hasVideo || info?.hasAudio);
+  if (readable) return;
+  await FileSystem.deleteAsync(toUri(path), { idempotent: true }).catch(() => {});
+  throw new EngineError("error.corrupt", "nothing readable");
+}
+
+// Video that cannot be remuxed is re-encoded: slow, but tolerant of broken packets.
+// The output keeps its container when H.264 and AAC fit it, and becomes MP4 otherwise.
+function reencodeTarget(output) {
+  const ext = output.split(".").pop();
+  return ["mp4", "mov", "mkv"].includes(ext) ? output : output.replace(/\.[^.]+$/, ".mp4");
+}
+
+async function repairMedia(type, source, output, scratch, progress, reference) {
+  // 1. Remux: copy the streams that can still be read. This keeps the quality and is fast.
+  const remux = [
+    "-y", "-err_detect", "ignore_err", "-fflags", "+genpts+discardcorrupt",
+    "-i", source, "-map", "0:v?", "-map", "0:a?", "-c", "copy", output,
+  ];
+  try {
+    await runAttempts([remux], progress);
+    await requireReadable(output, "media");
+    return output;
+  } catch (error) {
+    if (error instanceof JobCancelled) throw error;
+    if (!REPAIR_VIDEO.includes(type)) throw error;
+  }
+
+  // 2. MP4 without its index (moov): rebuild the video stream from the media data, then copy it.
+  // The stream does not carry the picture parameters (SPS and PPS), so a reference video supplies them.
+  let rawStream = null;
+  if (type === "mp4" || type === "mov") {
+    const raw = `${scratch}-raw.h264`;
+    try {
+      await nativeStep(() => extractH264(source, raw, reference?.path ?? null));
+      rawStream = raw;
+      await runAttempts([["-y", "-f", "h264", "-r", "30", "-i", raw, "-c:v", "copy", output]], progress);
+      await requireReadable(output, "media");
+      return output;
+    } catch (error) {
+      if (error instanceof JobCancelled) throw error;
+    }
+  }
+
+  // 3. Re-encode what can still be decoded. Slow, but it survives damaged packets and bad timestamps.
+  const target = reencodeTarget(output);
+  const inputArgs = rawStream
+    ? ["-f", "h264", "-r", "30", "-i", rawStream]
+    : ["-err_detect", "ignore_err", "-fflags", "+genpts+discardcorrupt", "-i", source];
+  try {
+    await runAttempts(
+      [[
+        "-y", ...inputArgs,
+        "-map", "0:v:0?", "-map", "0:a?",
+        "-c:v", "libopenh264", "-b:v", "2M", "-c:a", "aac", "-b:a", "128k",
+        target,
+      ]],
+      progress,
+    );
+    await requireReadable(target, "media");
+    return target;
+  } catch (error) {
+    if (error instanceof JobCancelled) throw error;
+    // An MP4 whose index is gone needs a healthy video from the same camera to recover its picture parameters.
+    if (rawStream && !reference) throw new EngineError("error.repairNeedsReference", "no SPS/PPS without a reference");
+    throw error;
+  }
+}
+
+// Repairs one file and returns the path of the recovered output.
+async function repairFile(input, index, total, ctx, reference) {
+  const found = await nativeStep(() => repairSniff(input.path));
+  const extension = repairExtension(found.type, input.name);
+  if (!extension) throw new EngineError("error.unsupported", input.name);
+
+  const stem = stemOf(input.name);
+  const scratch = `${WORK_DIR}${unique()}`;
+  const make = (ext) => `${OUTPUT_DIR}${stem}-repaired-${stamp()}.${ext}`;
+  const progress = {
+    outputDurationMs: 0,
+    onFraction: (fraction) => ctx.report(index + fraction, total),
+    control: ctx.control,
+  };
+
+  // Junk in front of the header is removed first, so every route below sees a clean file.
+  let source = input.path;
+  if (found.offset > 0) {
+    source = `${scratch}-strip`;
+    await nativeStep(() => repairStrip(input.path, source, found.offset));
+  }
+
+  if (REPAIR_VIDEO.includes(found.type) || REPAIR_AUDIO.includes(found.type)) {
+    return repairMedia(found.type, source, make(extension), scratch, progress, reference);
+  }
+
+  switch (found.type) {
+    case "jpeg": {
+      const fixed = `${scratch}-eoi.jpg`;
+      await nativeStep(() => repairJpegEoi(source, fixed));
+      const output = make("jpg");
+      await runAttempts([["-y", "-err_detect", "ignore_err", "-i", fixed, "-frames:v", "1", output]], progress);
+      await requireReadable(output, "image");
+      return output;
+    }
+    case "png": {
+      const output = make("png");
+      await nativeStep(() => repairPng(source, output));
+      await requireReadable(output, "image");
+      return output;
+    }
+    case "gif": {
+      const fixed = `${scratch}-trailer.gif`;
+      await nativeStep(() => repairGifTrailer(source, fixed));
+      const output = make("gif");
+      await runAttempts([["-y", "-err_detect", "ignore_err", "-i", fixed, output]], progress);
+      await requireReadable(output, "image");
+      return output;
+    }
+    case "webp": {
+      const output = make("png");
+      await nativeStep(() => decodeImage(source, output));
+      await requireReadable(output, "image");
+      return output;
+    }
+    case "pdf": {
+      const output = make("pdf");
+      await nativeStep(() => repairPdf(source, output));
+      return output;
+    }
+    case "zip": {
+      const output = make(extension);
+      await nativeStep(() => repairZip(source, output));
+      return output;
+    }
+    default:
+      throw new EngineError("error.unsupported", input.name);
+  }
+}
+
+// Repairs every selected file. Files that recover are returned even when others fail.
+async function runRepair(files, options, ctx) {
+  const outputs = [];
+  let firstError = null;
+  for (const [index, input] of files.entries()) {
+    try {
+      const path = await repairFile(input, index, files.length, ctx, options?.reference ?? null);
+      const ext = path.split(".").pop().toLowerCase();
+      outputs.push({ path, mime: REPAIR_MIME[ext] ?? "application/octet-stream" });
+    } catch (error) {
+      if (error instanceof JobCancelled) throw error;
+      if (!firstError) firstError = error;
+    }
+  }
+  if (!outputs.length) throw firstError ?? new EngineError("error.corrupt", "no files");
+  return { outputs, note: "result.repairPartial" };
+}
+
 // Runs one conversion. Returns { outputs: [{ path, mime }], note: translationKey | null }.
 export async function runConversion(category, files, options, { onProgress, control }) {
   await ensureDirs();
@@ -365,6 +580,8 @@ export async function runConversion(category, files, options, { onProgress, cont
       return runVideo(files, options, ctx);
     case "pdf":
       return runPdf(files, options, ctx);
+    case "repair":
+      return runRepair(files, options, ctx);
     default:
       throw new EngineError("error.unknownMode");
   }

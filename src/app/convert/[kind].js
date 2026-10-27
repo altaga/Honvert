@@ -66,6 +66,7 @@ function Converter({ kind, category }) {
   const [message, setMessage] = useState("");
   const [control, setControl] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [reference, setReference] = useState(null);
 
   const pdfMode = kind === "pdf" ? PDF_MODES[options.mode] : null;
   const picker = pdfMode ? { types: pdfMode.picker, multiple: pdfMode.multiple } : category.picker;
@@ -92,18 +93,20 @@ function Converter({ kind, category }) {
     .filter(Boolean)
     .join(" · ");
 
-  // Read media details for single-file categories.
+  // Read media details for single-file categories. The result is tagged with its file, so an old
+  // result never shows up for a new file and the effect does not have to clear state up front.
   useEffect(() => {
     let active = true;
-    setInfo(null);
     if (kind === "pdf" || files.length !== 1) return;
-    probeFile(files[0].path)
-      .then((data) => active && setInfo(data))
+    const path = files[0].path;
+    probeFile(path)
+      .then((data) => active && setInfo({ path, data }))
       .catch(() => active && setInfo(null));
     return () => {
       active = false;
     };
   }, [files, kind]);
+  const mediaInfo = files.length === 1 && info?.path === files[0].path ? info.data : null;
 
   function resetResult() {
     setResult(null);
@@ -142,6 +145,18 @@ function Converter({ kind, category }) {
     resetResult();
   }
 
+  // The reference is optional: a healthy video from the same camera, used by the repair tool.
+  async function pickReference() {
+    const picked = await DocumentPicker.getDocumentAsync({
+      type: ["video/*"],
+      multiple: false,
+      copyToCacheDirectory: true,
+    });
+    if (picked.canceled) return;
+    const asset = picked.assets[0];
+    setReference({ name: asset.name, path: toPath(asset.uri), mime: asset.mimeType, size: asset.size });
+  }
+
   function startOver() {
     setFiles([]);
     setProgress(0);
@@ -160,7 +175,8 @@ function Converter({ kind, category }) {
     setStatus("running");
 
     try {
-      const output = await runConversion(kind, files, options, { onProgress: setProgress, control: job });
+      const runOptions = kind === "repair" ? { ...options, reference } : options;
+      const output = await runConversion(kind, files, runOptions, { onProgress: setProgress, control: job });
       const outputs = await Promise.all(
         output.outputs.map(async (item) => {
           const stat = await FileSystem.getInfoAsync(fileUri(item.path));
@@ -231,12 +247,25 @@ function Converter({ kind, category }) {
           <FileDrop
             files={files}
             hint={t(acceptKey)}
-            meta={describeMedia(info, kind, t)}
+            meta={describeMedia(mediaInfo, kind, t)}
             multiple={picker.multiple}
             disabled={busy}
             onPress={pickFiles}
           />
         </Reveal>
+
+        {kind === "repair" && (
+          <Reveal index={1} style={styles.section}>
+            <SectionHeader index="02" title={t("repair.referenceTitle")} />
+            <FileDrop
+              files={reference ? [reference] : []}
+              hint={t("repair.referenceHint")}
+              multiple={false}
+              disabled={busy}
+              onPress={pickReference}
+            />
+          </Reveal>
+        )}
 
         {primary.length > 0 && (
           <Reveal index={1} style={styles.section}>

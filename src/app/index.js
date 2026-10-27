@@ -16,6 +16,7 @@ const ICONS = {
   audio: "musical-notes-outline",
   video: "videocam-outline",
   pdf: "document-text-outline",
+  repair: "construct-outline",
 };
 
 export default function Home() {
@@ -39,16 +40,14 @@ export default function Home() {
       </Reveal>
 
       <ScrollView contentContainerStyle={{ paddingBottom: space.xxl }}>
-        <Reveal index={1} style={{ paddingHorizontal: space.xl, paddingTop: space.xxl, gap: space.lg }}>
-          <Text style={type.display}>
-            {t("home.headline")}
-            {"\n"}
-            <Text style={{ color: colors.accent }}>{t("home.headlineAccent")}</Text>
+        <Reveal index={1} style={{ paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.xs }}>
+          <Text style={type.heading}>
+            {t("home.headline")} <Text style={{ color: colors.accent }}>{t("home.headlineAccent")}</Text>
           </Text>
           <Text style={type.small}>{t("home.lede")}</Text>
         </Reveal>
 
-        <View style={{ marginTop: space.xxl }}>
+        <View style={{ marginTop: space.xl }}>
           <Reveal index={2} style={{ paddingHorizontal: space.xl, paddingBottom: space.md }}>
             <Mono>{t("home.tools")}</Mono>
           </Reveal>

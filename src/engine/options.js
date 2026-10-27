@@ -239,6 +239,18 @@ export const CATEGORIES = {
       },
     ],
   },
+
+  // Repair has no settings: it keeps whatever FFmpeg (or Android) can still read from a damaged file.
+  repair: {
+    titleKey: "cat.repair.title",
+    subtitleKey: "cat.repair.subtitle",
+    formatsKey: "cat.repair.formats",
+    acceptKey: "accept.repair",
+    picker: { types: ["*/*"], multiple: true },
+    defaults: {},
+    advanced: [],
+    controls: [],
+  },
 };
 
 // Quality presets used by the PDF actions.

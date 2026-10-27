@@ -14,5 +14,15 @@ export const renderPdfPage = (pdfPath, pageIndex, dpi, format, quality, outPath)
   Native.renderPdfPage(pdfPath, pageIndex, dpi, format, quality, outPath);
 export const getEncoders = (mime) => Native.getEncoders(mime);
 
+// Repair (see RepairTools.kt). Each call writes a best-effort output file and returns its path.
+export const repairSniff = (path) => Native.repairSniff(path);
+export const repairStrip = (inPath, outPath, offset) => Native.repairStrip(inPath, outPath, offset);
+export const repairJpegEoi = (inPath, outPath) => Native.repairJpegEoi(inPath, outPath);
+export const repairGifTrailer = (inPath, outPath) => Native.repairGifTrailer(inPath, outPath);
+export const repairPng = (inPath, outPath) => Native.repairPng(inPath, outPath);
+export const repairZip = (inPath, outPath) => Native.repairZip(inPath, outPath);
+export const repairPdf = (inPath, outPath) => Native.repairPdf(inPath, outPath);
+export const extractH264 = (inPath, outPath, referencePath) => Native.extractH264(inPath, outPath, referencePath ?? null);
+
 export const onStart = (listener) => Native.addListener("onStart", listener);
 export const onProgress = (listener) => Native.addListener("onProgress", listener);

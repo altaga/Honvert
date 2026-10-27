@@ -120,4 +120,20 @@ android {
   });
 }
 
-module.exports = (config) => withShortNativeBuild(withGradleWrapperVersion(withAgpVersion(withGradleMemory(withReleaseSigning(withDebugInternet(config))))));
+// PDFBox's JPEG 2000 filter references two optional classes that the app does not ship. R8 stops on them
+// unless told to ignore them. Repair only loads and saves PDFs, so that filter is never run.
+const PDFBOX_RULES = "\n# PDFBox: optional JPEG 2000 codec (not shipped)\n-dontwarn com.gemalto.jp2.**\n";
+
+function withPdfboxRules(config) {
+  return withDangerousMod(config, [
+    "android",
+    (cfg) => {
+      const file = path.join(cfg.modRequest.platformProjectRoot, "app", "proguard-rules.pro");
+      const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      if (!current.includes("com.gemalto.jp2")) fs.writeFileSync(file, current + PDFBOX_RULES);
+      return cfg;
+    },
+  ]);
+}
+
+module.exports = (config) => withPdfboxRules(withShortNativeBuild(withGradleWrapperVersion(withAgpVersion(withGradleMemory(withReleaseSigning(withDebugInternet(config)))))));

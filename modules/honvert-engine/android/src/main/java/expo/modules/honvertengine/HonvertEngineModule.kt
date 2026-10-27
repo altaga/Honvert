@@ -167,6 +167,38 @@ class HonvertEngineModule : Module() {
       outPath
     }
 
+    // Repair: each function writes whatever it can still recover from a damaged file. See RepairTools.
+    AsyncFunction("repairSniff") { path: String ->
+      val found = RepairTools.sniff(path)
+      mapOf("type" to found.type, "offset" to found.offset)
+    }
+    AsyncFunction("repairStrip") { input: String, output: String, offset: Int ->
+      RepairTools.stripPrefix(input, output, offset)
+      output
+    }
+    AsyncFunction("repairJpegEoi") { input: String, output: String ->
+      RepairTools.appendJpegEoi(input, output)
+      output
+    }
+    AsyncFunction("repairGifTrailer") { input: String, output: String ->
+      RepairTools.appendGifTrailer(input, output)
+      output
+    }
+    AsyncFunction("repairPng") { input: String, output: String ->
+      val result = RepairTools.repairPng(input, output)
+      mapOf("width" to result.width, "height" to result.height, "rows" to result.rows)
+    }
+    AsyncFunction("repairZip") { input: String, output: String ->
+      RepairTools.repairZip(input, output)
+    }
+    AsyncFunction("repairPdf") { input: String, output: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("app context not ready")
+      RepairTools.repairPdf(context, input, output)
+    }
+    AsyncFunction("extractH264") { input: String, output: String, reference: String? ->
+      RepairTools.extractH264(input, output, reference)
+    }
+
     // Lists encoders for a MIME type, marking which ones are hardware accelerated.
     Function("getEncoders") { mime: String ->
       MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos

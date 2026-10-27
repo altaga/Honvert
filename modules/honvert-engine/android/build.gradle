@@ -15,4 +15,6 @@ android {
 dependencies {
   // LGPL-3.0 build of FFmpeg (no GPL codecs). Includes MediaCodec hardware encoders.
   implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9'
+  // Apache-2.0 port of PDFBox for Android. Used only to rebuild damaged PDFs (cross-reference table).
+  implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
 }

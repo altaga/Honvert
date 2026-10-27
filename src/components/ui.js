@@ -65,9 +65,12 @@ export function Tappable({ onPress, disabled, label, role = "button", state, sty
         accessibilityState={state}
         disabled={disabled}
         onPressIn={() => {
+          // Reanimated shared values are written in event handlers by design.
+          // eslint-disable-next-line react-hooks/immutability
           if (!disabled) scale.value = withSpring(0.97, SPRING);
         }}
         onPressOut={() => {
+          // eslint-disable-next-line react-hooks/immutability
           scale.value = withSpring(1, SPRING);
         }}
         onPress={() => {
