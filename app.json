@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.honvert.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0A",
         "foregroundImage": "./src/assets/adaptive-icon.png",

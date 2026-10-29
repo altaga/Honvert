@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { Image, PixelRatio, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, {
   Easing,
-  FadeInDown,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
@@ -20,10 +20,8 @@ const tap = () => {
   if (prefs.haptics) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
-// Built once at module scope: one entering builder per stagger step, not one per render.
-const RISE = Array.from({ length: 12 }, (_, step) =>
-  FadeInDown.duration(380).delay(step * 60).easing(Easing.out(Easing.cubic)),
-);
+const RISE = { duration: 380, easing: Easing.out(Easing.cubic) };
+const RISE_STEP_MS = 60;
 const SPRING = { damping: 18, stiffness: 420, mass: 0.6 };
 
 export function formatBytes(bytes) {
@@ -43,13 +41,21 @@ export function iconFor(mime = "") {
 }
 
 // Entrance: content rises 10px and fades in, staggered by index. Skipped when reduce-motion is on.
+// It animates opacity and a transform only. Reanimated's layout "entering" animations can keep a view at the
+// position it had when the animation started, so a section above that grew (a format list wrapping onto a
+// second line on a narrow phone) left the next section drawn on top of it.
 export function Reveal({ index = 0, style, children }) {
   const reduced = useReducedMotion();
-  return (
-    <Animated.View entering={reduced ? undefined : RISE[Math.min(index, RISE.length - 1)]} style={style}>
-      {children}
-    </Animated.View>
-  );
+  const progress = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    if (reduced) return;
+    progress.value = withDelay(Math.min(index, 11) * RISE_STEP_MS, withTiming(1, RISE));
+  }, [index, progress, reduced]);
+  const rise = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * 10 }],
+  }));
+  return <Animated.View style={[style, rise]}>{children}</Animated.View>;
 }
 
 // A press target with a spring scale. The outer view takes layout styles; the inner Pressable handles touches.
