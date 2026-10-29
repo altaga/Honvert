@@ -30,6 +30,18 @@ export const extractH264 = (inPath, outPath, referencePath) => Native.extractH26
 // First video frame as an upright JPEG no larger than maxSide, for the crop box preview.
 export const videoFrame = (inPath, outPath, maxSide) => Native.videoFrame(inPath, outPath, maxSide);
 
+// System file picker that survives the app being killed while it is open (see PickerActivity.kt).
+// Both return JSON: { canceled, tag, files: [{ name, path, mime, size }], error }.
+export const pickFiles = (types, multiple, tag) => Native.pickFiles(types, multiple, tag);
+export const takePendingPick = () => Native.takePendingPick();
+
+// Saves a finished file into DCIM/Honvert/<tool> (pictures, videos) or Download/Honvert/<tool> (the rest).
+// Returns that folder. Rejects with "unsupported" on Android 9 and older.
+export const saveToDevice = (inPath, fileName, mimeType, tool) => Native.saveToDevice(inPath, fileName, mimeType, tool);
+
+// Opens a finished file in a viewer app. Rejects with "no app" when nothing can open it.
+export const openFile = (path, mime) => Native.openFile(path, mime);
+
 // PDF passwords (see PdfSecurity.kt). A wrong password rejects with "wrong password".
 export const pdfProtect = (inPath, outPath, password) => Native.pdfProtect(inPath, outPath, password);
 export const pdfUnlock = (inPath, outPath, password) => Native.pdfUnlock(inPath, outPath, password);

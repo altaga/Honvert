@@ -10,5 +10,21 @@
       android:name="expo.modules.honvertengine.ConversionService"
       android:exported="false"
       android:foregroundServiceType="dataSync" />
+    <!-- See-through host for the system file picker; survives the app being killed while it is open. -->
+    <activity
+      android:name="expo.modules.honvertengine.PickerActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    <!-- Hands finished files to viewer apps (photos, video player, PDF viewer) without storage permissions. -->
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.honvert.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/honvert_file_paths" />
+    </provider>
   </application>
 </manifest>

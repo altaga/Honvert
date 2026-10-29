@@ -53,7 +53,8 @@ export function Reveal({ index = 0, style, children }) {
 }
 
 // A press target with a spring scale. The outer view takes layout styles; the inner Pressable handles touches.
-export function Tappable({ onPress, disabled, label, role = "button", state, style, innerStyle, pressedStyle, children }) {
+// `dimDisabled` fades a disabled control; controls with their own disabled look turn it off.
+export function Tappable({ onPress, disabled, dimDisabled = true, label, role = "button", state, style, innerStyle, pressedStyle, children }) {
   const scale = useSharedValue(1);
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -77,7 +78,7 @@ export function Tappable({ onPress, disabled, label, role = "button", state, sty
           tap();
           onPress?.();
         }}
-        style={({ pressed }) => [innerStyle, pressed && !disabled && pressedStyle, disabled && { opacity: 0.35 }]}
+        style={({ pressed }) => [innerStyle, pressed && !disabled && pressedStyle, disabled && dimDisabled && { opacity: 0.35 }]}
       >
         {children}
       </Pressable>
@@ -114,16 +115,19 @@ export function SectionHeader({ index, title, trailing }) {
 export function Button({ label, onPress, variant = "primary", icon, disabled, style }) {
   const { noCase } = useT();
   const primary = variant === "primary";
-  const ink = primary ? colors.accentInk : colors.text;
+  // A disabled primary button turns neutral with readable text, instead of a faded blue nobody can read.
+  const off = primary && disabled;
+  const ink = off ? colors.muted : primary ? colors.accentInk : colors.text;
 
   return (
     <Tappable
       label={label}
       onPress={onPress}
       disabled={disabled}
+      dimDisabled={!primary}
       state={{ disabled: !!disabled }}
       style={style}
-      innerStyle={[styles.button, primary ? { backgroundColor: colors.accent } : styles.buttonGhost]}
+      innerStyle={[styles.button, off ? styles.buttonOff : primary ? { backgroundColor: colors.accent } : styles.buttonGhost]}
       pressedStyle={{ opacity: 0.9 }}
     >
       {icon ? <Ionicons name={icon} size={18} color={ink} /> : null}
@@ -134,11 +138,35 @@ export function Button({ label, onPress, variant = "primary", icon, disabled, st
   );
 }
 
-export function OptionGroup({ label, choices, value, onChange }) {
+// A setting's label with an optional "i" button. Tapping it shows, under the label, what the setting does.
+export function FieldLabel({ label, info }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  if (!info) return <Mono>{label}</Mono>;
+  return (
+    <View style={styles.fieldLabel}>
+      <View style={styles.fieldLabelRow}>
+        <Mono>{label}</Mono>
+        <Tappable
+          label={`${t("info.about")} ${label}`}
+          state={{ expanded: open }}
+          onPress={() => setOpen((value) => !value)}
+          innerStyle={styles.infoButton}
+          pressedStyle={{ opacity: 0.6 }}
+        >
+          <Ionicons name={open ? "information-circle" : "information-circle-outline"} size={20} color={colors.accent} />
+        </Tappable>
+      </View>
+      {open ? <Text style={styles.infoText}>{info}</Text> : null}
+    </View>
+  );
+}
+
+export function OptionGroup({ label, info, choices, value, onChange }) {
   const { t } = useT();
   return (
     <View style={styles.group}>
-      <Mono>{label}</Mono>
+      <FieldLabel label={label} info={info} />
       <View style={styles.optionRow}>
         {choices.map((choice) => {
           const selected = choice.value === value;
@@ -166,10 +194,10 @@ export function OptionGroup({ label, choices, value, onChange }) {
 }
 
 // One labeled text field. `secure` hides the text (passwords).
-export function TextField({ label, value, onChange, hint, secure, keyboard }) {
+export function TextField({ label, info, value, onChange, hint, secure, keyboard }) {
   return (
     <View style={styles.group}>
-      <Mono>{label}</Mono>
+      <FieldLabel label={label} info={info} />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -187,12 +215,12 @@ export function TextField({ label, value, onChange, hint, secure, keyboard }) {
 }
 
 // Start and end times typed as m:ss. Empty start means the beginning; empty end means the end of the file.
-export function TimeRange({ label, startLabel, endLabel, startMs, endMs, parse, format, onChange }) {
+export function TimeRange({ label, info, startLabel, endLabel, startMs, endMs, parse, format, onChange }) {
   const [start, setStart] = useState(startMs ? format(startMs) : "");
   const [end, setEnd] = useState(endMs ? format(endMs) : "");
   return (
     <View style={styles.group}>
-      <Mono>{label}</Mono>
+      <FieldLabel label={label} info={info} />
       <View style={styles.timeRow}>
         <TextInput
           value={start}
@@ -268,7 +296,7 @@ export function FileDrop({ files, hint, meta, multiple, disabled, onPress }) {
           <Ionicons name="add" size={26} color={colors.accentInk} />
         </View>
         <Text style={type.heading}>{multiple ? t("file.chooseMany") : t("file.choose")}</Text>
-        <Mono>{hint}</Mono>
+        <Mono>{keepSeparators(hint)}</Mono>
       </Tappable>
     );
   }
@@ -339,6 +367,9 @@ export function Notice({ tone = "info", children }) {
   );
 }
 
+// "JPG · PNG · WEBP" with each dot glued to the word before it, so a wrapped line never starts with a dot.
+export const keepSeparators = (text = "") => text.replace(/ · /g, " · ");
+
 export function CategoryRow({ icon, title, subtitle, formats, onPress }) {
   return (
     <Tappable label={title} onPress={onPress} innerStyle={styles.categoryRow} pressedStyle={{ backgroundColor: colors.surface }}>
@@ -350,15 +381,16 @@ export function CategoryRow({ icon, title, subtitle, formats, onPress }) {
         <Text style={type.small} numberOfLines={2}>
           {subtitle}
         </Text>
-        <Mono>{formats}</Mono>
+        <Mono>{keepSeparators(formats)}</Mono>
       </View>
       <Ionicons name="arrow-forward" size={22} color={colors.accent} />
     </Tappable>
   );
 }
 
-// A finished file: tapping the row shares it. The download icon saves a copy into a folder the user picks.
-export function OutputRow({ name, mime, path, size, onPress, onDownload, label }) {
+// A finished file: tapping the row (or its open icon) opens it in a viewer app. The other icons save a copy
+// into a folder the user picks, or share it.
+export function OutputRow({ name, mime, path, size, onPress, onShare, onDownload, label }) {
   const { t } = useT();
   const ext = name.split(".").pop()?.toUpperCase();
   return (
@@ -370,21 +402,33 @@ export function OutputRow({ name, mime, path, size, onPress, onDownload, label }
         </Text>
         <Mono>{`${ext} · ${formatBytes(size)}`}</Mono>
       </View>
+      <Tappable label={`${t("action.open")}: ${name}`} onPress={onPress} innerStyle={styles.rowAction}>
+        <Ionicons name="open-outline" size={22} color={colors.accent} />
+      </Tappable>
       {onDownload ? (
         <Tappable label={`${t("action.download")}: ${name}`} onPress={onDownload} innerStyle={styles.rowAction}>
           <Ionicons name="download-outline" size={22} color={colors.accent} />
         </Tappable>
       ) : null}
-      <View style={styles.rowAction}>
-        <Ionicons name="share-outline" size={22} color={colors.accent} />
-      </View>
+      <Tappable label={`${t("action.share")}: ${name}`} onPress={onShare} innerStyle={styles.rowAction}>
+        <Ionicons name="share-social-outline" size={22} color={colors.accent} />
+      </Tappable>
     </Tappable>
   );
 }
 
+// Android's minimum touch target, and the padding that brings a 20 dp icon up to it.
+const MIN_TOUCH = 48;
+const TOUCH_PAD = (MIN_TOUCH - 20) / 2;
+
 const styles = StyleSheet.create({
+  fieldLabel: { gap: space.xs },
+  fieldLabelRow: { flexDirection: "row", alignItems: "center", gap: space.xs },
+  // 48 dp touch target (Android's minimum) around a 20 dp icon, without pushing the label away.
+  infoButton: { padding: TOUCH_PAD, margin: -TOUCH_PAD },
+  infoText: { ...type.small },
   flex: { flex: 1 },
-  rowAction: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  rowAction: { width: MIN_TOUCH, height: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
   noCase: { letterSpacing: 0, textTransform: "none", fontSize: 16 },
   hairline: { height: StyleSheet.hairlineWidth },
   sectionHeader: {
@@ -405,6 +449,7 @@ const styles = StyleSheet.create({
     borderRadius: radius,
   },
   buttonGhost: { borderWidth: 1, borderColor: colors.lineStrong, backgroundColor: "transparent" },
+  buttonOff: { borderWidth: 1, borderColor: colors.lineStrong, backgroundColor: colors.surfaceHigh },
   buttonLabel: {
     fontFamily: type.heading.fontFamily,
     fontWeight: "700",
@@ -416,7 +461,7 @@ const styles = StyleSheet.create({
   group: { gap: space.sm },
   optionRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   option: {
-    minHeight: 44,
+    minHeight: MIN_TOUCH,
     minWidth: 52,
     paddingHorizontal: space.lg,
     alignItems: "center",

@@ -13,6 +13,8 @@ export const colors = {
   accentInk: "#0B0B0B",
   danger: "#FF6B6B",
   success: "#7EE787",
+  // Dims what lies outside the crop box.
+  scrim: "rgba(0,0,0,0.55)",
 };
 
 // Android ships condensed and monospace families, so no font files are bundled.

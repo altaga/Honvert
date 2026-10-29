@@ -14,6 +14,7 @@
     "test:native": "node tests/run-native.js",
     "test:deep": "node tests/run-deep.js",
     "test:e2e": "node tests/e2e/run.js",
+    "test:matrix": "node tests/e2e/matrix.js",
     "postinstall": "patch-package"
   },
   "dependencies": {

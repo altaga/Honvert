@@ -139,7 +139,8 @@ export function buildImageArgs({
   filters.push(...orientFilters(rotate, flip));
   // Exact pixels are the final size the user sees, so they apply after rotation.
   if (exact) filters.push(exact);
-  if (format === "ico") filters.push("scale='min(256\\,iw)':'min(256\\,ih)':force_original_aspect_ratio=decrease");
+  // ICO holds PNG frames of at most 256 px, and FFmpeg's ICO writer only takes them as RGBA.
+  if (format === "ico") filters.push("scale='min(256\\,iw)':'min(256\\,ih)':force_original_aspect_ratio=decrease", "format=rgba");
 
   const common = ["-frames:v", "1", "-map_metadata", "-1"];
   const codec = IMAGE_CODECS[format](quality);

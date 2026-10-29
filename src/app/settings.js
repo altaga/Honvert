@@ -4,21 +4,63 @@ import { useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Hairline, Mono, Notice, SectionHeader } from "../components/ui";
-import { prefs, setHaptics } from "../core/prefs";
+import { prefs, setAutoSave, setHaptics } from "../core/prefs";
 import { colors, radius, space, type } from "../core/theme";
 import { LANGUAGES, useT } from "../i18n";
 
 const logo = require("../assets/logo-mark.png");
 
+// An on/off setting with a short explanation and a checkbox.
+function SwitchRow({ label, hint, value, onToggle }) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: value }}
+      onPress={onToggle}
+      style={({ pressed }) => [
+        { flexDirection: "row", alignItems: "center", gap: space.lg, paddingVertical: space.md },
+        pressed && { backgroundColor: colors.surface },
+      ]}
+    >
+      <View style={{ flex: 1, gap: space.xs }}>
+        <Text style={type.bodyStrong}>{label}</Text>
+        <Text style={type.small}>{hint}</Text>
+      </View>
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: radius,
+          borderWidth: 1,
+          borderColor: value ? colors.accent : colors.lineStrong,
+          backgroundColor: value ? colors.accent : "transparent",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {value ? <Ionicons name="checkmark" size={18} color={colors.accentInk} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function Settings() {
   const { t, locale, setLocale, directionMismatch } = useT();
   const [restartNeeded, setRestartNeeded] = useState(directionMismatch);
   const [haptics, setHapticsState] = useState(prefs.haptics);
+  const [autoSave, setAutoSaveState] = useState(prefs.autoSave);
 
   async function chooseLanguage(code) {
     if (code === locale) return;
     const needsRestart = await setLocale(code);
     if (needsRestart) setRestartNeeded(true);
+  }
+
+  async function toggleAutoSave() {
+    const next = !autoSave;
+    setAutoSaveState(next);
+    await setAutoSave(next);
   }
 
   async function toggleHaptics() {
@@ -78,35 +120,9 @@ export default function Settings() {
 
         <View style={{ gap: space.lg }}>
           <SectionHeader title={t("settings.about")} />
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel={t("settings.haptics")}
-            accessibilityState={{ checked: haptics }}
-            onPress={toggleHaptics}
-            style={({ pressed }) => [
-              { flexDirection: "row", alignItems: "center", gap: space.lg, paddingVertical: space.md },
-              pressed && { backgroundColor: colors.surface },
-            ]}
-          >
-            <View style={{ flex: 1, gap: space.xs }}>
-              <Text style={type.bodyStrong}>{t("settings.haptics")}</Text>
-              <Text style={type.small}>{t("settings.hapticsHint")}</Text>
-            </View>
-            <View
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: radius,
-                borderWidth: 1,
-                borderColor: haptics ? colors.accent : colors.lineStrong,
-                backgroundColor: haptics ? colors.accent : "transparent",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {haptics ? <Ionicons name="checkmark" size={18} color={colors.accentInk} /> : null}
-            </View>
-          </Pressable>
+          <SwitchRow label={t("settings.autoSave")} hint={t("settings.autoSaveHint")} value={autoSave} onToggle={toggleAutoSave} />
+          <Hairline />
+          <SwitchRow label={t("settings.haptics")} hint={t("settings.hapticsHint")} value={haptics} onToggle={toggleHaptics} />
           <Hairline />
           <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: space.md }}>
             <Mono>{t("settings.version")}</Mono>

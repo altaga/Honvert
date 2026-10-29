@@ -95,7 +95,7 @@ export function CropBox({ path, pictureWidth, pictureHeight, rect, aspect, onCha
 const styles = StyleSheet.create({
   // No clipping: the corner handles stick out past the picture so they stay easy to grab at the edges.
   frame: { maxWidth: "100%", alignSelf: "center", backgroundColor: colors.surface },
-  shade: { position: "absolute", backgroundColor: "rgba(0,0,0,0.55)" },
+  shade: { position: "absolute", backgroundColor: colors.scrim },
   box: { position: "absolute", borderWidth: 2, borderColor: colors.accent },
   handle: {
     position: "absolute",

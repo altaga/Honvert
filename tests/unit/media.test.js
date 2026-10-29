@@ -303,6 +303,7 @@ describe("new output formats", () => {
   it("caps icons at 256 px and stores PNG frames", () => {
     const args = buildImageArgs({ input: "a.png", output: "b.ico", format: "ico", width: 1024, height: 1024 });
     expect(valueAfter(args, "-vf")).toContain("min(256");
+    expect(valueAfter(args, "-vf").endsWith(",format=rgba")).toBe(true);
     expect(valueAfter(args, "-c:v")).toBe("png");
   });
 

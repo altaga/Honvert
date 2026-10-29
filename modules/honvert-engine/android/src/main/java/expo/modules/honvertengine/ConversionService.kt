@@ -46,7 +46,15 @@ class ConversionService : Service() {
       buildProgress(this, current, percent),
       ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
     )
+    // A fast conversion can end before Android gets here. The service could not be stopped then (Android
+    // crashes the app when a service started this way is stopped before startForeground), so stop it now.
+    if (!markForeground()) stopSelf()
     return START_NOT_STICKY
+  }
+
+  override fun onDestroy() {
+    clearForeground()
+    super.onDestroy()
   }
 
   // Android 15+ limits dataSync foreground services to 6 hours per 24-hour window and calls this
@@ -65,6 +73,8 @@ class ConversionService : Service() {
     private const val MIN_UPDATE_INTERVAL_MS = 500L
 
     private var active = 0
+    // True once the service has called startForeground. Only then may it be stopped from outside.
+    private var foreground = false
     private var labels: ConversionLabels? = null
     private var percent = 0
     private var lastUpdate = 0L
@@ -104,7 +114,20 @@ class ConversionService : Service() {
         ensureChannel(context)
         NotificationManagerCompat.from(context).notify(DONE_NOTIFICATION_ID, buildDone(context, current))
       }
-      context.stopService(Intent(context, ConversionService::class.java))
+      // Before startForeground ran, stopping would crash the app; the service stops itself once it starts.
+      if (foreground) context.stopService(Intent(context, ConversionService::class.java))
+    }
+
+    // Records that the service is in the foreground. Returns false when every conversion already ended.
+    @Synchronized
+    private fun markForeground(): Boolean {
+      foreground = active > 0
+      return foreground
+    }
+
+    @Synchronized
+    private fun clearForeground() {
+      foreground = false
     }
 
     private fun ensureChannel(context: Context) {

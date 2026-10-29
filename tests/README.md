@@ -45,6 +45,19 @@ It needs `adb` on the PATH, one device or emulator, the app installed, and the d
 
 The script finds each control by its visible text, taken from `src/i18n/locales/en.js`, so it follows wording changes. It leaves the damaged PDF and the saved copy on the device. Android does not accept the Download folder itself as a save target, so the script saves into Documents.
 
+### Full device matrix
+
+`npm run test:matrix` runs the whole app on a device, case by case:
+
+- every tool, and every value of every setting, one at a time, plus a few combined;
+- every input type each tool accepts (JPG, PNG, WEBP, BMP, TIFF, HEIC, AVIF, GIF, a 35 MP photo, an EXIF-rotated photo, WAV, MP3, AVI with sound, PDFs, damaged files);
+- files from internal storage and from the SD card, batches, expected errors (wrong PDF password, missing pages, empty watermark);
+- Android killing the app while the file picker is open, which must still deliver the files.
+
+Each result is auto-saved by the app, pulled back, and checked from its own bytes by `e2e/inspect_media.py`: file type, size in pixels, length, channels, frames, loop count, pages, rotation, encryption and audio tags. The inputs are synthetic, built by `e2e/fixtures.py`.
+
+It needs `adb`, a device or emulator with an SD card and the app installed, and Python 3 with `pip install pillow pillow-heif lameenc tinytag hachoir pypdf` (or pass `--py <folder>` for packages installed with `pip install --target`). `--only image,pdf` runs some tools only. It takes about an hour and writes a JSON report next to the fixtures folder.
+
 ## When a fuzz test fails
 
 The failing case is printed as JSON and the run stops there. The JavaScript fuzz tests use the seed in `HONVERT_FUZZ_SEED` (default `20261027`), so the same command replays the same cases. The native tests use fixed seeds in the code.

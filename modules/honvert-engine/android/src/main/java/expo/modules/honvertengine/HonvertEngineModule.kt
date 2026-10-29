@@ -14,6 +14,7 @@ import android.provider.DocumentsContract
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFprobeKit
 import com.arthenica.ffmpegkit.ReturnCode
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -197,6 +198,15 @@ class HonvertEngineModule : Module() {
       created.toString()
     }
 
+    // Saves a finished file where the phone's own apps find it: DCIM/Honvert/<tool> for pictures and videos,
+    // Download/Honvert/<tool> for the rest (MediaSaver.kt). No storage permission is needed. Returns the folder.
+    // Android 9 and older reject with "unsupported"; the Download icon still works there.
+    AsyncFunction("saveToDevice") { inPath: String, fileName: String, mimeType: String, tool: String ->
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw IllegalStateException("unsupported")
+      val context = appContext.reactContext ?: throw IllegalStateException("app context not ready")
+      MediaSaver.save(context, File(inPath), fileName, mimeType, tool)
+    }
+
     // Repair: each function writes whatever it can still recover from a damaged file. See RepairTools.
     AsyncFunction("repairSniff") { path: String ->
       val found = RepairTools.sniff(path)
@@ -260,6 +270,43 @@ class HonvertEngineModule : Module() {
         outPath
       } finally {
         retriever.release()
+      }
+    }
+
+    // File picker (PickerActivity.kt). Resolves with a JSON string: { canceled, tag, files, error }.
+    AsyncFunction("pickFiles") { types: List<String>, multiple: Boolean, tag: String, promise: Promise ->
+      val activity = appContext.currentActivity ?: throw IllegalStateException("no activity")
+      PickerActivity.listener = { json -> promise.resolve(json) }
+      val intent = android.content.Intent(activity, PickerActivity::class.java)
+        .putExtra(PickerActivity.EXTRA_TYPES, types.toTypedArray())
+        .putExtra(PickerActivity.EXTRA_MULTIPLE, multiple)
+        .putExtra(PickerActivity.EXTRA_TAG, tag)
+      activity.startActivity(intent)
+    }
+
+    // Files picked while the app was being restarted, or null. Reading it removes it.
+    Function("takePendingPick") {
+      val context = appContext.reactContext ?: return@Function null
+      val file = PickerActivity.pendingFile(context)
+      if (!file.exists()) return@Function null
+      val json = file.readText()
+      file.delete()
+      json
+    }
+
+    // Opens a finished file in a viewer app (photos, video player, PDF viewer). Rejects with "no app" when
+    // nothing on the phone can open that type.
+    AsyncFunction("openFile") { path: String, mime: String ->
+      val activity = appContext.currentActivity ?: throw IllegalStateException("no activity")
+      val uri = androidx.core.content.FileProvider.getUriForFile(activity, "${activity.packageName}.honvert.fileprovider", File(path))
+      val type = mime.ifEmpty { activity.contentResolver.getType(uri) ?: "*/*" }
+      val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+        .setDataAndType(uri, type)
+        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      try {
+        activity.startActivity(intent)
+      } catch (error: android.content.ActivityNotFoundException) {
+        throw IllegalStateException("no app")
       }
     }
 

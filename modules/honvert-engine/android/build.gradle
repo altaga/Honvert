@@ -9,6 +9,8 @@ android {
   defaultConfig {
     versionCode 1
     versionName "0.1.0"
+    // Keep rules the app's R8 must apply for this module's dependencies (see consumer-rules.pro).
+    consumerProguardFiles "consumer-rules.pro"
   }
 }
 
@@ -17,6 +19,11 @@ dependencies {
   implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9'
   // Apache-2.0 port of PDFBox for Android. Used only to rebuild damaged PDFs (cross-reference table).
   implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+  // FileProvider: lets a viewer app open a finished file ("Open with").
+  implementation 'androidx.core:core:1.13.1'
+  // React Native's image loader (Fresco) reads the orientation of HEIC and AVIF pictures with this class,
+  // looked up by name at runtime. Without it, showing a HEIC or AVIF thumbnail crashes the app.
+  implementation 'androidx.exifinterface:exifinterface:1.3.7'
   // Unit and fuzz tests for RepairTools run on the JVM, without a device (see tests/README.md).
   testImplementation 'junit:junit:4.13.2'
 }

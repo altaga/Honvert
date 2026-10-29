@@ -1,10 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -33,9 +32,10 @@ import { EngineError, JobCancelled } from "../../engine/errors";
 import { fileNameFor, withoutExtension } from "../../engine/names";
 import { requestNotificationPermission } from "../../engine/background";
 import { setEngineLabels } from "../../engine/labels";
-import { saveToFolder, videoFrame } from "../../../modules/honvert-engine";
+import { openFile, saveToDevice, saveToFolder, videoFrame } from "../../../modules/honvert-engine";
 import { BITRATE_AUDIO, estimateBytes, probeFile } from "../../engine/media";
 import { CATEGORIES, PDF_MODES, formatTime, parseTime } from "../../engine/options";
+import { pick, takeRestoredPick } from "../../engine/picker";
 import { useT } from "../../i18n";
 
 const CROPPABLE = new Set(["image", "gif", "video"]);
@@ -68,17 +68,28 @@ function Converter({ kind, category }) {
   const insets = useSafeAreaInsets();
   const advancedKeys = category.advanced ?? [];
 
-  const [options, setOptions] = useState(category.defaults);
-  const [files, setFiles] = useState([]);
+  // Files picked just before Android restarted the app come back here (see engine/picker.js).
+  const [restored] = useState(() => takeRestoredPick(kind));
+  const [options, setOptions] = useState(() =>
+    restored?.tag.mode && category.modes?.[restored.tag.mode] ? { ...category.defaults, mode: restored.tag.mode } : category.defaults,
+  );
+  const [files, setFiles] = useState(() => (restored && restored.tag.slot !== "reference" ? restored.files : []));
   const [info, setInfo] = useState(null);
   const [status, setStatus] = useState("idle");
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => (restored?.failed ? t("pick.failed") : ""));
   const [control, setControl] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [reference, setReference] = useState(null);
+  const [reference, setReference] = useState(() => (restored?.tag.slot === "reference" ? restored.files[0] : null));
   const [saving, setSaving] = useState(null);
+  // When a conversion ends, the result (or the error) is below the settings, often off screen. The screen
+  // scrolls down to it once everything about it is on screen, including the auto-save notice.
+  const scrollRef = useRef(null);
+  const outcomeY = useRef(0);
+  function revealOutcome() {
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, outcomeY.current - space.lg), animated: true }), 150);
+  }
 
   const pdfMode = kind === "pdf" ? PDF_MODES[options.mode] : null;
   const picker = pdfMode ? { types: pdfMode.picker, multiple: pdfMode.multiple } : category.picker;
@@ -189,35 +200,30 @@ function Converter({ kind, category }) {
   }
 
   async function pickFiles() {
-    const picked = await DocumentPicker.getDocumentAsync({
-      type: picker.types,
-      multiple: picker.multiple,
-      copyToCacheDirectory: true,
-    });
-    if (picked.canceled) return;
-
-    setFiles(
-      picked.assets.map((asset) => ({
-        name: asset.name,
-        path: toPath(asset.uri),
-        mime: asset.mimeType,
-        size: asset.size,
-      })),
-    );
+    const picked = await pick(picker.types, picker.multiple, { kind, mode: options.mode, slot: "files" }).catch(() => null);
+    if (!picked) {
+      setMessage(t("pick.failed"));
+      setStatus("error");
+      return;
+    }
+    if (picked.canceled) {
+      if (picked.failed) {
+        setMessage(t("pick.failed"));
+        setStatus("error");
+      }
+      return;
+    }
+    setFiles(picked.files);
     setOptions((previous) => ({ ...previous, cropRect: null }));
     resetResult();
+    if (picked.failed) setMessage(t("pick.failed"));
   }
 
   // The reference is optional: a healthy video from the same camera, used by the repair tool.
   async function pickReference() {
-    const picked = await DocumentPicker.getDocumentAsync({
-      type: ["video/*"],
-      multiple: false,
-      copyToCacheDirectory: true,
-    });
-    if (picked.canceled) return;
-    const asset = picked.assets[0];
-    setReference({ name: asset.name, path: toPath(asset.uri), mime: asset.mimeType, size: asset.size });
+    const picked = await pick(["video/*"], false, { kind, mode: options.mode, slot: "reference" }).catch(() => null);
+    if (!picked || picked.canceled) return;
+    setReference(picked.files[0]);
   }
 
   function startOver() {
@@ -248,6 +254,8 @@ function Converter({ kind, category }) {
       );
       setResult({ note: output.note, outputs });
       setStatus("done");
+      if (prefs.autoSave) await autoSave(outputs);
+      revealOutcome();
       buzz(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       if (error instanceof JobCancelled) {
@@ -256,6 +264,7 @@ function Converter({ kind, category }) {
       } else {
         setStatus("error");
         setMessage(error instanceof EngineError ? t(error.key) : t("error.generic"));
+        revealOutcome();
         if (__DEV__) console.warn("conversion failed", error?.key, error?.detail);
         buzz(Haptics.NotificationFeedbackType.Error);
       }
@@ -271,6 +280,32 @@ function Converter({ kind, category }) {
       return;
     }
     await Sharing.shareAsync(fileUri(output.path), { mimeType: output.mime, dialogTitle: t("action.share") });
+  }
+
+  // Saves every result where the phone's own apps find it: DCIM/Honvert/<tool> for pictures and videos,
+  // Download/Honvert/<tool> for the rest. Android 9 and older can't do this without a storage permission: the Download icon is left.
+  async function autoSave(outputs) {
+    const folders = new Set();
+    let failed = false;
+    for (const output of outputs) {
+      try {
+        folders.add(await saveToDevice(output.path, output.name, output.mime ?? "", kind));
+      } catch (error) {
+        if (!String(error?.message).includes("unsupported")) failed = true;
+      }
+    }
+    if (failed) setMessage(t("save.autoFailed"));
+    else if (folders.size) setMessage(t("save.auto", { folder: [...folders].join(", ") }));
+  }
+
+  // Opens a result in a viewer app the phone already has (photos, video player, PDF viewer).
+  async function open(output) {
+    try {
+      await openFile(output.path, output.mime ?? "");
+    } catch {
+      setMessage(t("open.noApp"));
+      setStatus("error");
+    }
   }
 
   // Saves a copy of one result into a folder the user picks, under the name the user typed.
@@ -295,6 +330,7 @@ function Converter({ kind, category }) {
         <TimeRange
           key={control.key}
           label={t(control.labelKey)}
+          info={control.infoKey ? t(control.infoKey) : undefined}
           startLabel={t("trim.start")}
           endLabel={t("trim.end")}
           startMs={options.startMs}
@@ -310,6 +346,7 @@ function Converter({ kind, category }) {
         <TextField
           key={control.key}
           label={t(control.labelKey)}
+          info={control.infoKey ? t(control.infoKey) : undefined}
           hint={control.hintKey ? t(control.hintKey) : undefined}
           value={options[control.key]}
           secure={control.secure}
@@ -322,6 +359,7 @@ function Converter({ kind, category }) {
       <OptionGroup
         key={control.key}
         label={t(control.labelKey)}
+        info={control.infoKey ? t(control.infoKey) : undefined}
         choices={control.choices}
         value={options[control.key]}
         onChange={(value) => setOption(control.key, value)}
@@ -343,6 +381,7 @@ function Converter({ kind, category }) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.content, { paddingBottom: 170 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
       >
@@ -405,65 +444,77 @@ function Converter({ kind, category }) {
                 />
               </View>
             )}
-            {estimate > 0 &&<Mono>{t("estimate.size", { size: formatBytes(estimate) })}</Mono>}
+            {estimate > 0 && <Mono>{t("estimate.size", { size: formatBytes(estimate) })}</Mono>}
           </Reveal>
         )}
 
-        {message ? <Notice tone={status === "error" ? "danger" : "info"}>{message}</Notice> : null}
+        {message || result ? (
+          <View
+            style={styles.outcome}
+            onLayout={(event) => {
+              outcomeY.current = event.nativeEvent.layout.y;
+            }}
+          >
+            {/* Errors and other notes sit above the result; a finished job's notice (auto-save) sits inside it. */}
+            {message && !result ? <Notice tone={status === "error" ? "danger" : "info"}>{message}</Notice> : null}
 
-        {result && (
-          <Reveal index={0} style={styles.section}>
-            <SectionHeader
-              index="03"
-              title={t("section.result")}
-              trailing={<Mono color={colors.success}>● {t("file.done")}</Mono>}
-            />
-            <View style={styles.statsRow}>
-              <Stat label={t("result.original")} value={formatBytes(inputBytes)} />
-              <Stat label={t("output.label")} value={formatBytes(outputBytes)} />
-              {savings !== null && (
-                <Stat
-                  label={savings >= 0 ? t("result.saved") : t("result.increase")}
-                  value={`${Math.abs(savings)}%`}
-                  tone={savings >= 0 ? colors.success : colors.text}
+            {result && (
+              <Reveal index={0} style={styles.section}>
+                <SectionHeader
+                  index="03"
+                  title={t("section.result")}
+                  trailing={<Mono color={colors.success}>● {t("file.done")}</Mono>}
                 />
-              )}
-            </View>
-            {savings !== null && savings < 0 ? <Notice>{t("result.grewNote")}</Notice> : null}
-            {result.note ? <Notice>{t(result.note)}</Notice> : null}
-            <View>
-              {result.outputs.map((output) => (
-                <View key={output.path}>
-                  <OutputRow
-                    name={output.name}
-                    mime={output.mime}
-                    path={output.path}
-                    size={output.size}
-                    label={`${t("action.share")}: ${output.name}`}
-                    onPress={() => share(output)}
-                    onDownload={() => setSaving({ path: output.path, name: withoutExtension(output.name) })}
-                  />
-                  {saving?.path === output.path ? (
-                    <View style={styles.saveEditor}>
-                      <Mono>{t("save.nameLabel")}</Mono>
-                      <TextInput
-                        value={saving.name}
-                        onChangeText={(name) => setSaving({ path: output.path, name })}
-                        style={styles.nameInput}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        accessibilityLabel={t("save.nameLabel")}
-                      />
-                      <Button label={t("save.choose")} icon="folder-open-outline" onPress={() => saveOutput(output)} />
-                      <Button variant="ghost" label={t("action.cancel")} onPress={() => setSaving(null)} />
-                    </View>
-                  ) : null}
+                <View style={styles.statsRow}>
+                  <Stat label={t("result.original")} value={formatBytes(inputBytes)} />
+                  <Stat label={t("output.label")} value={formatBytes(outputBytes)} />
+                  {savings !== null && (
+                    <Stat
+                      label={savings >= 0 ? t("result.saved") : t("result.increase")}
+                      value={`${Math.abs(savings)}%`}
+                      tone={savings >= 0 ? colors.success : colors.text}
+                    />
+                  )}
                 </View>
-              ))}
-              <Hairline />
-            </View>
-          </Reveal>
-        )}
+                {savings !== null && savings < 0 ? <Notice>{t("result.grewNote")}</Notice> : null}
+                {message ? <Notice tone={status === "error" ? "danger" : "success"}>{message}</Notice> : null}
+                {result.note ? <Notice>{t(result.note)}</Notice> : null}
+                <View>
+                  {result.outputs.map((output) => (
+                    <View key={output.path}>
+                      <OutputRow
+                        name={output.name}
+                        mime={output.mime}
+                        path={output.path}
+                        size={output.size}
+                        label={`${t("action.open")}: ${output.name}`}
+                        onPress={() => open(output)}
+                        onShare={() => share(output)}
+                        onDownload={() => setSaving({ path: output.path, name: withoutExtension(output.name) })}
+                      />
+                      {saving?.path === output.path ? (
+                        <View style={styles.saveEditor}>
+                          <Mono>{t("save.nameLabel")}</Mono>
+                          <TextInput
+                            value={saving.name}
+                            onChangeText={(name) => setSaving({ path: output.path, name })}
+                            style={styles.nameInput}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            accessibilityLabel={t("save.nameLabel")}
+                          />
+                          <Button label={t("save.choose")} icon="folder-open-outline" onPress={() => saveOutput(output)} />
+                          <Button variant="ghost" label={t("action.cancel")} onPress={() => setSaving(null)} />
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                  <Hairline />
+                </View>
+              </Reveal>
+            )}
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space.lg }]}>
@@ -514,6 +565,7 @@ const styles = StyleSheet.create({
   section: { gap: space.lg },
   advanced: { gap: space.md },
   crop: { gap: space.sm },
+  outcome: { gap: space.xxl },
   statsRow: { flexDirection: "row", flexWrap: "wrap", gap: space.xl },
   bottom: {
     position: "absolute",

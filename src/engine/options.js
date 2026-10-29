@@ -473,6 +473,73 @@ export const CATEGORIES = {
   },
 };
 
+// What each setting's "i" button explains, per category. Settings that mean the same everywhere share one text;
+// fields that belong together (width and height, the audio tags) share one.
+export const INFO_KEYS = {
+  image: {
+    format: "info.image.format",
+    quality: "info.image.quality",
+    scalePercent: "info.image.scalePercent",
+    pixelWidth: "info.image.pixelWidth",
+    pixelHeight: "info.image.pixelWidth",
+    ratio: "info.ratio",
+    rotate: "info.rotate",
+    flip: "info.flip",
+  },
+  gif: {
+    fps: "info.gif.fps",
+    width: "info.gif.width",
+    speed: "info.speed",
+    ratio: "info.ratio",
+    playback: "info.gif.playback",
+    loop: "info.gif.loop",
+    colors: "info.gif.colors",
+    dither: "info.gif.dither",
+    trim: "info.trim",
+  },
+  audio: {
+    format: "info.audio.format",
+    bitrate: "info.audio.bitrate",
+    speed: "info.speed",
+    channels: "info.audio.channels",
+    normalize: "info.normalize",
+    trim: "info.trim",
+    title: "info.audio.title",
+    artist: "info.audio.title",
+    album: "info.audio.title",
+    year: "info.audio.title",
+  },
+  video: {
+    format: "info.video.format",
+    height: "info.video.height",
+    bitrate: "info.video.bitrate",
+    fps: "info.video.fps",
+    speed: "info.speed",
+    ratio: "info.ratio",
+    rotate: "info.rotate",
+    flip: "info.flip",
+    keepAudio: "info.video.keepAudio",
+    normalize: "info.normalize",
+    metadata: "info.video.metadata",
+    gpu: "info.video.gpu",
+    trim: "info.trim",
+  },
+  pdf: {
+    mode: "info.pdf.mode",
+    quality: "info.pdf.quality",
+    format: "info.pdf.format",
+    pages: "info.pdf.pages",
+    order: "info.pdf.order",
+    rotate: "info.pdf.rotate",
+    watermark: "info.pdf.watermark",
+    opacity: "info.pdf.opacity",
+    password: "info.pdf.password",
+  },
+};
+for (const [kind, category] of Object.entries(CATEGORIES)) {
+  category.controls = category.controls.map((control) => ({ ...control, infoKey: INFO_KEYS[kind]?.[control.key] }));
+}
+
 // Quality presets used by the PDF actions.
 export const PDF_QUALITY = {
   high: { dpi: 150, jpegQuality: 90 },

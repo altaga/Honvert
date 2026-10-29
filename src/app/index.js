@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useEffect } from "react";
 import { Image, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CategoryRow, Hairline, Mono, Reveal, Tappable } from "../components/ui";
 import { colors, space, type } from "../core/theme";
 import { CATEGORIES } from "../engine/options";
+import { restorePendingPick } from "../engine/picker";
 import { useT } from "../i18n";
 
 const logo = require("../assets/logo-mark.png");
@@ -22,6 +24,12 @@ const ICONS = {
 export default function Home() {
   const { t } = useT();
   const entries = Object.entries(CATEGORIES);
+
+  // Android may kill the app while the file picker is open. The picked files survive: reopen their converter.
+  useEffect(() => {
+    const route = restorePendingPick();
+    if (route) router.push(route);
+  }, []);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top", "bottom"]}>

@@ -146,3 +146,11 @@ describe("parsePageOrder", () => {
     expect(parsePageOrder(text, count)).toEqual(expected);
   });
 });
+
+describe("setting explanations", () => {
+  it.each(Object.keys(CATEGORIES).filter((kind) => kind !== "repair"))("every %s setting has an English explanation", (kind) => {
+    for (const control of CATEGORIES[kind].controls) {
+      expect([control.key, control.infoKey && en[control.infoKey]]).toEqual([control.key, expect.any(String)]);
+    }
+  });
+});
